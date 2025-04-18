@@ -1,0 +1,86 @@
+{
+  "name": "vscode-dv-flow",
+  "displayName": "vscode-dv-flow",
+  "description": "VSCode support for the dv-flow build tool",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.98.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscode-dv-flow.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "vscode-dv-flow.updateTree",
+        "title": "Update DV-Flow Tree"
+      },
+      {
+        "command": "vscode-dv-flow.refreshTree",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vscode-dv-flow.openTask",
+        "title": "Open Task Source"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "dvFlowWorkspace",
+          "name": "DV-Flow Workspace"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "vscode-dv-flow.refreshTree",
+          "when": "view == dvFlowWorkspace",
+          "group": "navigation"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "dvflow",
+        "extensions": [
+          ".dv"
+        ],
+        "filenames": [
+          "flow.dv"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.99.1",
+    "@typescript-eslint/eslint-plugin": "^8.25.0",
+    "@typescript-eslint/parser": "^8.25.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.21.0",
+    "typescript": "^5.7.3"
+  },
+  "extensionDependencies": [
+    "redhat.vscode-yaml"
+  ]
+}
