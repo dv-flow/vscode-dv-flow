@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as child_process from 'child_process';
 import * as fs from 'fs';
-import { privateEncrypt } from 'crypto';
 
 interface TaskInfo {
     name: string;
@@ -46,9 +45,47 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
     };
 
     private hasWorkspace = false;
+    private fileWatchers: vscode.FileSystemWatcher[] = [];
 
     constructor(private workspaceRoot: string) {
         this.loadWorkspaceData();
+        
+        // Watch the root flow.dv file
+        const flowWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(this.workspaceRoot, 'flow.dv')
+        );
+        flowWatcher.onDidChange(() => this.refreshView());
+        flowWatcher.onDidCreate(() => this.refreshView());
+        flowWatcher.onDidDelete(() => this.refreshView());
+        this.fileWatchers.push(flowWatcher);
+    }
+
+    private updateFileWatchers(): void {
+        // Clear existing file watchers
+        this.fileWatchers.forEach(watcher => watcher.dispose());
+        this.fileWatchers = [];
+
+        // Create watcher for flow.dv
+        const flowWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(this.workspaceRoot, 'flow.dv')
+        );
+        flowWatcher.onDidChange(() => this.refreshView());
+        flowWatcher.onDidCreate(() => this.refreshView());
+        flowWatcher.onDidDelete(() => this.refreshView());
+        this.fileWatchers.push(flowWatcher);
+
+        // Create watchers for files from workspace data
+        if (this.flowData.files) {
+            for (const file of this.flowData.files) {
+                const watcher = vscode.workspace.createFileSystemWatcher(
+                    new vscode.RelativePattern(this.workspaceRoot, file)
+                );
+                watcher.onDidChange(() => this.refreshView());
+                watcher.onDidCreate(() => this.refreshView());
+                watcher.onDidDelete(() => this.refreshView());
+                this.fileWatchers.push(watcher);
+            }
+        }
     }
 
     private async findPythonInterpreter(): Promise<string> {
@@ -127,6 +164,7 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
     refresh(data: FlowData): void {
         this.flowData = data;
         this._onDidChangeTreeData.fire();
+        this.updateFileWatchers();
     }
 
     refreshView(): void {

@@ -144,7 +144,7 @@
         "displayName": "Flow Graph View",
         "selector": [
           {
-            "filenamePattern": "*.dot"
+            "filenamePattern": "*.dvg"
           }
         ],
         "priority": "default"

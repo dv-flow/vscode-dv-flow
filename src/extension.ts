@@ -137,7 +137,7 @@ export async function activate(context: vscode.ExtensionContext) {
             : undefined;
 
     // Register virtual filesystem
-    flowFileSystem = new FlowFileSystem();
+    flowFileSystem = new FlowFileSystem(context);
     context.subscriptions.push(
         vscode.workspace.registerFileSystemProvider('dvflow', flowFileSystem, {
             isCaseSensitive: true,
@@ -168,12 +168,18 @@ export async function activate(context: vscode.ExtensionContext) {
         // Register open flow graph command
         let openFlowGraphDisposable = vscode.commands.registerCommand('vscode-dv-flow.openFlowGraph', async (item: FlowTreeItem) => {
             try {
-                // Create a URI for the temp dot file
-                const dotUri = vscode.Uri.parse('dvflow:/temp.dot');
+                // Get the task name
+                const labelName = item.label.split('.').pop() || item.label;
+                
+                // Create a unique filename using task name and timestamp
+                const timestamp = Date.now();
+                const safeTaskName = labelName.replace(/[^a-zA-Z0-9]/g, '_');
+                const filename = `${safeTaskName}_${timestamp}.dvg`;
+                const graphUri = vscode.Uri.parse(`dvflow:/${filename}`);
                 
                 // Get task's flow graph DOT content using the Python utility
                 const pythonPath = await findPythonInterpreter(rootPath);
-                const command = `"${pythonPath}" -m dv_flow.mgr graph "${item.label}"`;
+                const command = `"${pythonPath}" -m dv_flow.mgr graph "${labelName}"`;
                 
                 const dotContent = await new Promise<string>((resolve, reject) => {
                     child_process.exec(command, { cwd: rootPath }, (error: Error | null, stdout: string, stderr: string) => {
@@ -187,11 +193,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 // Write the DOT content to the virtual file
                 if (flowFileSystem) {
-                    flowFileSystem.writeFile(dotUri, Buffer.from(dotContent), { create: true, overwrite: true });
+                    flowFileSystem.writeFile(graphUri, Buffer.from(dotContent), { create: true, overwrite: true });
                     
-                    // Open the file with the flow editor
-                    const doc = await vscode.workspace.openTextDocument(dotUri);
-                    await vscode.window.showTextDocument(doc, { preview: false, viewColumn: vscode.ViewColumn.Beside });
+                    // Open the file with the custom flow graph editor and get the panel
+                    const panel = await vscode.commands.executeCommand('vscode.openWith', graphUri, 'dvFlow.graphView', {
+                        preview: false,
+                        viewColumn: vscode.ViewColumn.Beside
+                    }) as vscode.WebviewPanel;
+
+                    // Set the panel title to the task name
+//                    FlowEditorProvider.setTitle(panel, item.label);
                 }
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to open flow graph: ${error instanceof Error ? error.message : String(error)}`);
