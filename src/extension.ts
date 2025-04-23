@@ -7,8 +7,25 @@ import * as child_process from 'child_process';
 import * as fs from 'fs';
 
 export async function findPythonInterpreter(rootPath: string): Promise<string> {
-    // Check for packages/python first
-    const workspacePythonPath = path.join(rootPath, 'packages/python/bin/python');
+    // Determine packages directory from ivpm.yaml if it exists
+    let packagesDir = 'packages';
+    const ivpmPath = path.join(rootPath, 'ivpm.yaml');
+    
+    if (fs.existsSync(ivpmPath)) {
+        try {
+            const ivpmContent = fs.readFileSync(ivpmPath, 'utf8');
+            // Basic YAML parsing for the specific structure we need
+            const matches = ivpmContent.match(/^package:\s*\n\s+(?:.*\n)*?\s+deps-dir:\s*(.+)$/m);
+            if (matches && matches[1]) {
+                packagesDir = matches[1].trim();
+            }
+        } catch (error) {
+            console.error('Error reading ivpm.yaml:', error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    // Check for python in the packages directory
+    const workspacePythonPath = path.join(rootPath, packagesDir, 'python/bin/python');
     if (fs.existsSync(workspacePythonPath)) {
         return workspacePythonPath;
     }
