@@ -169,9 +169,11 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
                 );
             case "tasks":
                 return Promise.resolve(
-                    (this.flowData.tasks || []).map(task => 
-                        new FlowTreeItem(task.name, vscode.TreeItemCollapsibleState.None, task.srcinfo)
-                    )
+                    (this.flowData.tasks || []).map(task => {
+                        const item = new FlowTreeItem(task.name, vscode.TreeItemCollapsibleState.None, task.srcinfo);
+                        item.contextValue = 'task';
+                        return item;
+                    })
                 );
             case "files":
                 return Promise.resolve(

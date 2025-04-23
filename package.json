@@ -9,13 +9,78 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:dvflow",
+    "onView:dvFlowWorkspace",
+    "onCommand:vscode-dv-flow.openFlowGraph",
+    "onCommand:vscode-dv-flow.updateTree",
+    "onCommand:vscode-dv-flow.refreshTree",
+    "onCommand:vscode-dv-flow.openTask",
+    "onCommand:vscode-dv-flow.runTask",
+    "onCommand:dvflow.pickTask",
+    "onDebug",
+    "workspaceContains:flow.dv"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "debuggers": [
+      {
+        "type": "dvflow",
+        "label": "DV Flow",
+        "program": "./out/debugProvider.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "task"
+            ],
+            "properties": {
+              "task": {
+                "type": "string",
+                "description": "The name of the DV Flow task to run",
+                "default": "${command:dvflow.pickTask}"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "dvflow",
+            "request": "launch",
+            "name": "Run DV Flow Task",
+            "task": "${command:dvflow.pickTask}"
+          }
+        ]
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "dvflow",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The name of the DV Flow task to run"
+          }
+        }
+      }
+    ],
     "commands": [
       {
-        "command": "vscode-dv-flow.helloWorld",
-        "title": "Hello World"
+        "command": "dvflow.pickTask",
+        "title": "Pick DV Flow Task",
+        "category": "DV Flow"
+      },
+      {
+        "command": "vscode-dv-flow.runTask",
+        "title": "Run DV Flow Task",
+        "category": "DV Flow"
+      },
+      {
+        "command": "vscode-dv-flow.openFlowGraph",
+        "title": "Open Flow Graph"
       },
       {
         "command": "vscode-dv-flow.updateTree",
@@ -31,22 +96,63 @@
         "title": "Open Task Source"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dv-flow-explorer",
+          "title": "DV Flow",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {
           "id": "dvFlowWorkspace",
-          "name": "DV-Flow Workspace"
+          "name": "Workspace",
+          "icon": "$(circuit-board)",
+          "contextualTitle": "DV Flow Workspace"
         }
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "vscode-dv-flow.runTask",
+          "when": "workspaceHasFlow"
+        }
+      ],
       "view/title": [
         {
           "command": "vscode-dv-flow.refreshTree",
           "when": "view == dvFlowWorkspace",
           "group": "navigation"
         }
+      ],
+      "view/item/context": [
+        {
+          "command": "vscode-dv-flow.openFlowGraph",
+          "when": "view == dvFlowWorkspace && viewItem == task",
+          "group": "navigation"
+        }
       ]
+    },
+    "customEditors": [
+      {
+        "viewType": "dvFlow.graphView",
+        "displayName": "Flow Graph View",
+        "selector": [
+          {
+            "filenamePattern": "*.dot"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configurationDefaults": {
+      "[yaml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+      }
     },
     "languages": [
       {
@@ -57,7 +163,18 @@
         "filenames": [
           "flow.dv"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "aliases": [
+          "DV Flow",
+          "dvflow"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "dvflow",
+        "scopeName": "source.yaml",
+        "path": "./syntaxes/yaml.tmLanguage.json"
       }
     ]
   },
@@ -68,6 +185,9 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test"
+  },
+  "dependencies": {
+    "d3-graphviz": "^4.0.0"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -82,5 +202,6 @@
   },
   "extensionDependencies": [
     "redhat.vscode-yaml"
-  ]
+  ],
+  "bundleDependencies": []
 }

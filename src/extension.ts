@@ -1,20 +1,138 @@
 import * as vscode from 'vscode';
-import { NodeDependenciesProvider } from './explorer/explorer';
+import { NodeDependenciesProvider, FlowTreeItem } from './explorer/explorer';
+import { FlowFileSystem } from './vfs/flowFileSystem';
+import { FlowEditorProvider } from './webview/flowEditor';
 import * as path from 'path';
+import * as child_process from 'child_process';
+import * as fs from 'fs';
+
+export async function findPythonInterpreter(rootPath: string): Promise<string> {
+    // Check for packages/python first
+    const workspacePythonPath = path.join(rootPath, 'packages/python/bin/python');
+    if (fs.existsSync(workspacePythonPath)) {
+        return workspacePythonPath;
+    }
+
+    // Check for VSCode's Python configuration
+    const pythonConfig = vscode.workspace.getConfiguration('python');
+    const configuredPython = pythonConfig.get<string>('defaultInterpreterPath');
+    if (configuredPython && fs.existsSync(configuredPython)) {
+        return configuredPython;
+    }
+
+    // Fallback to system Python
+    try {
+        const isWindows = process.platform === 'win32';
+        const pythonCmd = isWindows ? 'where python' : 'which python3';
+        const systemPython = child_process.execSync(pythonCmd).toString().trim().split('\n')[0];
+        if (systemPython && fs.existsSync(systemPython)) {
+            return systemPython;
+        }
+    } catch (error) {
+        console.error('Error finding system Python:', error instanceof Error ? error.message : String(error));
+    }
+
+    throw new Error('No Python interpreter found');
+}
 
 let treeDataProvider: NodeDependenciesProvider | undefined;
+let flowFileSystem: FlowFileSystem | undefined;
 
-export function activate(context: vscode.ExtensionContext) {
+import { DVFlowTaskProvider } from './taskRunner';
+import { DVFlowDebugConfigProvider, DVFlowDebugAdapterFactory } from './debugProvider';
+import { DVFlowYAMLEditorProvider } from './dvYamlEditor';
+export async function activate(context: vscode.ExtensionContext) {
     console.log('Congratulations, your extension "vscode-dv-flow" is now active!');
+
+    // Register DV Flow language features
+    context.subscriptions.push(...DVFlowYAMLEditorProvider.register(context));
+
+    // Associate .dv files with YAML validation from RedHat extension
+    // const yamlValidation = await vscode.commands.executeCommand('yaml.getSchemaContributions');
+    // if (yamlValidation) {
+    //     vscode.languages.setLanguageConfiguration('dvflow', {
+    //         // Inherit YAML language configuration
+    //         wordPattern: /[^\s,\{\}\[\]"']+/
+    //     });
+    // }
+
+    // Create output channel for DV Flow
+    const outputChannel = vscode.window.createOutputChannel('DV Flow');
+    context.subscriptions.push(outputChannel);
+    
+    // Register the task provider
+    const taskProvider = new DVFlowTaskProvider();
+    context.subscriptions.push(taskProvider.registerTaskProvider());
+
+    // Register debug adapter
+    const debugProvider = new DVFlowDebugConfigProvider(outputChannel);
+    const debugFactory = new DVFlowDebugAdapterFactory(outputChannel);
+
+    context.subscriptions.push(
+        vscode.debug.registerDebugConfigurationProvider('dvflow', debugProvider),
+        vscode.debug.registerDebugAdapterDescriptorFactory('dvflow', debugFactory)
+    );
+
+    // Register pickTask command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('dvflow.pickTask', async () => {
+            const taskName = await vscode.window.showInputBox({
+                placeHolder: 'Enter the task name to run',
+                prompt: 'Enter the name of the DV Flow task you want to execute'
+            });
+            return taskName;
+        })
+    );
+
+    // Register run task command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vscode-dv-flow.runTask', async () => {
+            const taskName = await vscode.window.showInputBox({
+                placeHolder: 'Enter the task name to run',
+                prompt: 'Enter the name of the DV Flow task you want to execute'
+            });
+
+            if (taskName) {
+                const task = new vscode.Task(
+                    { type: 'dvflow', task: taskName },
+                    vscode.TaskScope.Workspace,
+                    taskName,
+                    'dvflow'
+                );
+                await vscode.tasks.executeTask(task);
+            }
+        })
+    );
+
+    // Check for flow.dv in workspace
+    const hasFlow = vscode.workspace.workspaceFolders?.some(folder => {
+        const flowPath = path.join(folder.uri.fsPath, 'flow.dv');
+        return fs.existsSync(flowPath);
+    });
+
+    if (hasFlow) {
+        vscode.commands.executeCommand('setContext', 'workspaceHasFlow', true);
+    }
 
     const rootPath =
         vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
             ? vscode.workspace.workspaceFolders[0].uri.fsPath
             : undefined;
 
+    // Register virtual filesystem
+    flowFileSystem = new FlowFileSystem();
+    context.subscriptions.push(
+        vscode.workspace.registerFileSystemProvider('dvflow', flowFileSystem, {
+            isCaseSensitive: true,
+            isReadonly: false
+        }),
+        FlowEditorProvider.register(context)
+    );
+
     if (rootPath) {
         treeDataProvider = new NodeDependenciesProvider(rootPath);
-        vscode.window.registerTreeDataProvider('dvFlowWorkspace', treeDataProvider);
+        const treeView = vscode.window.registerTreeDataProvider('dvFlowWorkspace', treeDataProvider);
+        context.subscriptions.push(treeView);
 
         // Register update tree data command
         let updateDisposable = vscode.commands.registerCommand('vscode-dv-flow.updateTree', (jsonData) => {
@@ -27,6 +145,39 @@ export function activate(context: vscode.ExtensionContext) {
         let refreshDisposable = vscode.commands.registerCommand('vscode-dv-flow.refreshTree', () => {
             if (treeDataProvider) {
                 treeDataProvider.refreshView();
+            }
+        });
+
+        // Register open flow graph command
+        let openFlowGraphDisposable = vscode.commands.registerCommand('vscode-dv-flow.openFlowGraph', async (item: FlowTreeItem) => {
+            try {
+                // Create a URI for the temp dot file
+                const dotUri = vscode.Uri.parse('dvflow:/temp.dot');
+                
+                // Get task's flow graph DOT content using the Python utility
+                const pythonPath = await findPythonInterpreter(rootPath);
+                const command = `"${pythonPath}" -m dv_flow.mgr graph "${item.label}"`;
+                
+                const dotContent = await new Promise<string>((resolve, reject) => {
+                    child_process.exec(command, { cwd: rootPath }, (error: Error | null, stdout: string, stderr: string) => {
+                        if (error) {
+                            reject(error);
+                            return;
+                        }
+                        resolve(stdout);
+                    });
+                });
+
+                // Write the DOT content to the virtual file
+                if (flowFileSystem) {
+                    flowFileSystem.writeFile(dotUri, Buffer.from(dotContent), { create: true, overwrite: true });
+                    
+                    // Open the file with the flow editor
+                    const doc = await vscode.workspace.openTextDocument(dotUri);
+                    await vscode.window.showTextDocument(doc, { preview: false, viewColumn: vscode.ViewColumn.Beside });
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to open flow graph: ${error instanceof Error ? error.message : String(error)}`);
             }
         });
 
@@ -65,7 +216,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         });
 
-        context.subscriptions.push(updateDisposable, refreshDisposable, openTaskDisposable);
+        context.subscriptions.push(updateDisposable, refreshDisposable, openTaskDisposable, openFlowGraphDisposable);
     }
 }
 
