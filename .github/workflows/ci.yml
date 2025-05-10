@@ -21,6 +21,12 @@ jobs:
         node-version: '20'
         cache: 'npm'
 
+    - name: Setup Python
+      run: |
+        python3 -m venv packages/python
+        ./packages/python/bin/pip install ivpm
+        ./packages/python/bin/ivpm update -a
+
     - name: Install dependencies
       run: npm ci
 
@@ -44,6 +50,18 @@ jobs:
         name: vscode-dv-flow
         path: "*.vsix"
         if-no-files-found: error
+
+    - name: Build Docs
+      run: |
+        cd docs
+        make html
+        touch _build/html/.nojekyll
+
+    - name: Publish Docs
+      uses: JamesIves/github-pages-deploy-action@4.1.7
+      with:
+        branch: gh-pages
+        folder: docs/_build/html
 
   publish:
     needs: build
