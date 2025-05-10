@@ -62,6 +62,9 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'ready':
                     updateWebview();
                     return;
+                case 'openTaskDefinition':
+                    vscode.commands.executeCommand('vscode-dv-flow.openTask', e.nodeId);
+                    return;
             }
         });
     }
@@ -132,6 +135,24 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     .node text {
                         fill: #000000;
+                    }
+                    .context-menu {
+                        position: fixed;
+                        background: var(--vscode-menu-background);
+                        border: 1px solid var(--vscode-menu-border);
+                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                        padding: 4px 0;
+                        z-index: 1000;
+                    }
+                    .menu-item {
+                        padding: 6px 12px;
+                        cursor: pointer;
+                        color: var(--vscode-menu-foreground);
+                        white-space: nowrap;
+                    }
+                    .menu-item:hover {
+                        background: var(--vscode-menu-selectionBackground);
+                        color: var(--vscode-menu-selectionForeground);
                     }
                 </style>
             </head>
@@ -294,8 +315,46 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
 
                         scaleToFit();
 
-                        // Handle messages from the extension
-                        window.addEventListener('message', event => {
+                // Add context menu handler for nodes
+                function initNodeHandlers() {
+                    const nodes = d3.selectAll(".node");
+                    nodes.on("contextmenu", function(event) {
+                        event.preventDefault();
+                        // Remove any existing context menus
+                        d3.selectAll(".context-menu").remove();
+                        
+                        const node = d3.select(this);
+                        const title = node.select("title").text();
+                        
+                        // Create and position context menu
+                        const menu = d3.select("body")
+                            .append("div")
+                            .attr("class", "context-menu")
+                            .style("left", event.pageX + "px")
+                            .style("top", event.pageY + "px");
+
+                        // Add menu item
+                        menu.append("div")
+                            .attr("class", "menu-item")
+                            .text("Go to Definition")
+                            .on("click", () => {
+                                vscode.postMessage({
+                                    type: 'openTaskDefinition',
+                                    nodeId: title
+                                });
+                                menu.remove();
+                            });
+
+                        // Close menu on click outside
+                        d3.select("body").on("click.menu", () => {
+                            menu.remove();
+                            d3.select("body").on("click.menu", null);
+                        });
+                    });
+                }
+
+                // Handle messages from the extension
+                window.addEventListener('message', event => {
                             const message = event.data;
                             switch (message.type) {
                                 case 'update':
@@ -307,10 +366,12 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                                                 scaleToFit();
                                                 setTimeout(() => {
                                                     initZoom();
-                                                    if (currentZoom !== 1) {
-                                                        zoomGraph(currentZoom);
-                                                    }
-                                                }, 100);
+                                                if (currentZoom !== 1) {
+                                                    zoomGraph(currentZoom);
+                                                }
+                                                // Initialize node handlers after graph is rendered
+                                                initNodeHandlers();
+                                            }, 100);
                                             });
                                     } catch (error) {
                                         console.error('Failed to render graph:', error);

@@ -244,7 +244,33 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         });
 
-        context.subscriptions.push(updateDisposable, refreshDisposable, openTaskDisposable, openFlowGraphDisposable);
+        // Register go to import declaration command
+        let goToImportDeclarationDisposable = vscode.commands.registerCommand(
+            'vscode-dv-flow.goToImportDeclaration', 
+            async (item: FlowTreeItem) => {
+                try {
+                    if (!item.importPath) {
+                        throw new Error('No import path available');
+                    }
+
+                    const importPath = path.join(rootPath, item.importPath);
+                    const document = await vscode.workspace.openTextDocument(importPath);
+                    await vscode.window.showTextDocument(document);
+                } catch (error) {
+                    vscode.window.showErrorMessage(
+                        `Failed to open import declaration: ${error instanceof Error ? error.message : String(error)}`
+                    );
+                }
+            }
+        );
+
+        context.subscriptions.push(
+            updateDisposable, 
+            refreshDisposable, 
+            openTaskDisposable, 
+            openFlowGraphDisposable,
+            goToImportDeclarationDisposable
+        );
     }
 }
 

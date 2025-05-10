@@ -7,4 +7,6 @@ package:
     deps:
       - name: Sphinx
         src: pypi
+      - name: packaging
+        src: pypi
 

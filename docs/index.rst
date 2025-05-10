@@ -42,9 +42,7 @@ package.
 
 .. image:: imgs/dv_flow_workspace_view.png
 
-This view is always active.
-
-The view can be manually-refreshed via `refresh` button.
+This view is always active, and can be manually-refreshed via `refresh` button.
 
 Single-clicking (selecting) an entry in the `tasks` collection will
 open an editor on the task's declaration.
@@ -53,7 +51,7 @@ open an editor on the task's declaration.
 Static Graph View
 -----------------
 
-A graphical representation of as task's execution graph can be opened
+A graphical representation of a task's execution graph can be opened
 from the `task` entries in the workspace view.
 
 .. image:: imgs/dv_flow_open_graphview.png
@@ -69,7 +67,9 @@ Hovering over nodes in the graph will show the value of the task's parameters.
 flow.dv Editor
 -------------- 
 
-A simple YAML text editor is provided for editing flow.dv files.
+A simple YAML text editor is provided for editing flow.dv files. All
+files named `flow.dv` are associated by default. The language `dvflow`
+can be used to associate additional file extensions with the editor.
 
 
 .. toctree::

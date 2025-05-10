@@ -8,9 +8,13 @@ interface TaskInfo {
     srcinfo: string;
 }
 
+interface ImportInfo {
+    path: string;
+}
+
 interface FlowData {
     name: string;
-    imports?: string[];
+    imports?: { [key: string]: ImportInfo };
     tasks?: TaskInfo[];
     files?: string[];
 }
@@ -19,7 +23,8 @@ export class FlowTreeItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly srcinfo?: string
+        public readonly srcinfo?: string,
+        public readonly importPath?: string
     ) {
         super(label, collapsibleState);
         
@@ -39,7 +44,7 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
 
     private flowData: FlowData = {
         name: "No Workspace",
-        imports: [],
+        imports: {},
         tasks: [],
         files: []
     };
@@ -154,7 +159,7 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
         this.hasWorkspace = false;
         this.flowData = {
             name: "No Workspace",
-            imports: [],
+            imports: {},
             tasks: [],
             files: []
         };
@@ -201,9 +206,16 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
         switch (element.label) {
             case "imports":
                 return Promise.resolve(
-                    (this.flowData.imports || []).map(imp => 
-                        new FlowTreeItem(imp, vscode.TreeItemCollapsibleState.None)
-                    )
+                    Object.entries(this.flowData.imports || {}).map(([imp_name, info]) => {
+                        const item = new FlowTreeItem(
+                            `${imp_name} : ${info.path}`, 
+                            vscode.TreeItemCollapsibleState.None,
+                            undefined,
+                            info.path
+                        );
+                        item.contextValue = 'import';
+                        return item;
+                    })
                 );
             case "tasks":
                 return Promise.resolve(
