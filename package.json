@@ -95,6 +95,10 @@
       {
         "command": "vscode-dv-flow.openTask",
         "title": "Open Task Source"
+      },
+      {
+        "command": "vscode-dv-flow.goToImportDeclaration",
+        "title": "Go to Declaration"
       }
     ],
     "viewsContainers": {
@@ -110,7 +114,7 @@
       "explorer": [
         {
           "id": "dvFlowWorkspace",
-          "name": "Workspace",
+          "name": "DV Flow",
           "icon": "$(circuit-board)",
           "contextualTitle": "DV Flow Workspace"
         }
@@ -134,6 +138,11 @@
         {
           "command": "vscode-dv-flow.openFlowGraph",
           "when": "view == dvFlowWorkspace && viewItem == task",
+          "group": "navigation"
+        },
+        {
+          "command": "vscode-dv-flow.goToImportDeclaration",
+          "when": "view == dvFlowWorkspace && viewItem == import",
           "group": "navigation"
         }
       ]

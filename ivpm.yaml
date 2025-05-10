@@ -1,0 +1,10 @@
+
+package:
+  name: vscode-dv-flow
+
+  dep-sets:
+  - name: default-dev
+    deps:
+      - name: Sphinx
+        src: pypi
+
