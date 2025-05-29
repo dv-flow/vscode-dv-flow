@@ -26,9 +26,16 @@ to a Python interpreter with access to the DV Flow Manager package.
 
 The DV Flow extension searches for the appropriate interpreter as follows:
 
+* Checks the 'dfmPath' setting in VSCode settings
 * Checks the `python.defaultInterpreterPath` setting in the workspace settings
 * Checks for the existence of an `IVPM <https://fvutils.github.io/ivpm>`_ packages directory
 * Checks the PATH for the `python3` executable
+
+
+.. image:: imgs/dfmPath_setting.png
+
+You can configure the `dfmPath` settings in the VSCode settings. The path is to 
+the `dfm` executable. 
 
 Features
 ========

@@ -58,10 +58,14 @@ to obtain much of the data that is displayed. The VSCode extension must be have 
 to a Python interpreter with access to the DV Flow Manager package.</p>
 <p>The DV Flow extension searches for the appropriate interpreter as follows:</p>
 <ul class="simple">
+<li><p>Checks the ‘dfmPath’ setting in VSCode settings</p></li>
 <li><p>Checks the <cite>python.defaultInterpreterPath</cite> setting in the workspace settings</p></li>
 <li><p>Checks for the existence of an <a class="reference external" href="https://fvutils.github.io/ivpm">IVPM</a> packages directory</p></li>
 <li><p>Checks the PATH for the <cite>python3</cite> executable</p></li>
 </ul>
+<img alt="_images/dfmPath_setting.png" src="_images/dfmPath_setting.png" />
+<p>You can configure the <cite>dfmPath</cite> settings in the VSCode settings. The path is to
+the <cite>dfm</cite> executable.</p>
 </section>
 <section id="features">
 <h2><a class="toc-backref" href="#id4" role="doc-backlink">Features</a><a class="headerlink" href="#features" title="Link to this heading">¶</a></h2>
