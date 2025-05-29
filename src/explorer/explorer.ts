@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as child_process from 'child_process';
 import * as fs from 'fs';
+import { findPythonInterpreter, expandPath } from '../extension';
 
 interface TaskInfo {
     name: string;
@@ -93,39 +94,24 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
         }
     }
 
-    private async findPythonInterpreter(): Promise<string> {
-        // Check for packages/python first
-        const workspacePythonPath = path.join(this.workspaceRoot, 'packages/python/bin/python');
-        if (fs.existsSync(workspacePythonPath)) {
-            return workspacePythonPath;
-        }
-
-        // Check for VSCode's Python configuration
-        const pythonConfig = vscode.workspace.getConfiguration('python');
-        const configuredPython = pythonConfig.get<string>('defaultInterpreterPath');
-        if (configuredPython && fs.existsSync(configuredPython)) {
-            return configuredPython;
-        }
-
-        // Fallback to system Python
-        try {
-            const isWindows = process.platform === 'win32';
-            const pythonCmd = isWindows ? 'where python' : 'which python3';
-            const systemPython = child_process.execSync(pythonCmd).toString().trim().split('\n')[0];
-            if (systemPython && fs.existsSync(systemPython)) {
-                return systemPython;
-            }
-        } catch (error) {
-            console.error('Error finding system Python:', error instanceof Error ? error.message : String(error));
-        }
-
-        throw new Error('No Python interpreter found');
-    }
-
     private async loadWorkspaceData(): Promise<void> {
         try {
-            const pythonPath = await this.findPythonInterpreter();
-            const command = `"${pythonPath}" -m dv_flow.mgr.util workspace`;
+            const config = vscode.workspace.getConfiguration('dvflow');
+            const rawDfmPath = config.get<string>('dfmPath');
+            
+            let command: string;
+            if (rawDfmPath) {
+                const dfmPath = expandPath(rawDfmPath);
+                if (fs.existsSync(dfmPath)) {
+                    command = `"${dfmPath}" util workspace`;
+                } else {
+                    const pythonPath = await findPythonInterpreter(this.workspaceRoot);
+                    command = `"${pythonPath}" -m dv_flow.mgr.util workspace`;
+                }
+            } else {
+                const pythonPath = await findPythonInterpreter(this.workspaceRoot);
+                command = `"${pythonPath}" -m dv_flow.mgr util workspace`;
+            }
             
             const output = await new Promise<string>((resolve, reject) => {
                 child_process.exec(command, { cwd: this.workspaceRoot }, (error, stdout, stderr) => {

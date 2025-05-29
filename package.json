@@ -186,7 +186,17 @@
         "scopeName": "source.yaml",
         "path": "./syntaxes/yaml.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "DV Flow",
+      "properties": {
+        "dvflow.dfmPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the DV Flow Manager (dfm) executable"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

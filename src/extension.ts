@@ -6,6 +6,23 @@ import * as path from 'path';
 import * as child_process from 'child_process';
 import * as fs from 'fs';
 
+// Helper function to expand variables in paths
+export function expandPath(pathWithVars: string): string {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+    
+    // Replace ${workspaceFolder} with actual workspace path
+    let expandedPath = pathWithVars.replace(/\${workspaceFolder}/g, workspaceFolder || '');
+    
+    // Replace ${env:NAME} with environment variable values
+    expandedPath = expandedPath.replace(/\${env:([^}]+)}/g, (_, name) => process.env[name] || '');
+    
+    // Handle user home directory
+    expandedPath = expandedPath.replace(/^~/, process.env.HOME || process.env.USERPROFILE || '');
+    
+    return expandedPath;
+}
+
+// Export this function so it can be used by other parts of the extension
 export async function findPythonInterpreter(rootPath: string): Promise<string> {
     // Determine packages directory from ivpm.yaml if it exists
     let packagesDir = 'packages';
@@ -177,9 +194,23 @@ export async function activate(context: vscode.ExtensionContext) {
                 const filename = `${safeTaskName}_${timestamp}.dvg`;
                 const graphUri = vscode.Uri.parse(`dvflow:/${filename}`);
                 
-                // Get task's flow graph DOT content using the Python utility
-                const pythonPath = await findPythonInterpreter(rootPath);
-                const command = `"${pythonPath}" -m dv_flow.mgr graph "${labelName}"`;
+                // Try to get graph using dfm if configured, otherwise fall back to Python
+                const config = vscode.workspace.getConfiguration('dvflow');
+                const rawDfmPath = config.get<string>('dfmPath');
+                
+                let command: string;
+                if (rawDfmPath) {
+                    const dfmPath = expandPath(rawDfmPath);
+                    if (fs.existsSync(dfmPath)) {
+                        command = `"${dfmPath}" graph "${labelName}"`;
+                    } else {
+                        const pythonPath = await findPythonInterpreter(rootPath);
+                        command = `"${pythonPath}" -m dv_flow.mgr graph "${labelName}"`;
+                    }
+                } else {
+                    const pythonPath = await findPythonInterpreter(rootPath);
+                    command = `"${pythonPath}" -m dv_flow.mgr graph "${labelName}"`;
+                }
                 
                 const dotContent = await new Promise<string>((resolve, reject) => {
                     child_process.exec(command, { cwd: rootPath }, (error: Error | null, stdout: string, stderr: string) => {
@@ -275,3 +306,9 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+// Export utilities that may be needed by other parts of the extension
+export const utilities = {
+    findPythonInterpreter,
+    expandPath
+};
