@@ -2,7 +2,7 @@
   "name": "vscode-dv-flow",
   "displayName": "vscode-dv-flow",
   "description": "VSCode support for the dv-flow build tool",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "matthew-ballance",
   "engines": {
     "vscode": "^1.98.0"
@@ -76,7 +76,7 @@
       },
       {
         "command": "vscode-dv-flow.runTask",
-        "title": "Run DV Flow Task",
+        "title": "Run Task",
         "category": "DV Flow"
       },
       {
@@ -116,7 +116,7 @@
           "id": "dvFlowWorkspace",
           "name": "DV Flow",
           "icon": "$(circuit-board)",
-          "contextualTitle": "DV Flow Workspace"
+          "contextualTitle": "DV Flow"
         }
       ]
     },
@@ -137,6 +137,11 @@
       "view/item/context": [
         {
           "command": "vscode-dv-flow.openFlowGraph",
+          "when": "view == dvFlowWorkspace && viewItem == task",
+          "group": "navigation"
+        },
+        {
+          "command": "vscode-dv-flow.runTask",
           "when": "view == dvFlowWorkspace && viewItem == task",
           "group": "navigation"
         },

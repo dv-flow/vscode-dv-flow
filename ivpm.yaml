@@ -9,4 +9,7 @@ package:
         src: pypi
       - name: packaging
         src: pypi
+      - name: dv-flow-mgr
+        url: https://github.com/dv-flow/dv-flow-mgr.git
+
 

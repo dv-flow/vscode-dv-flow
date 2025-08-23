@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import * as child_process from 'child_process';
 import * as fs from 'fs';
-import { findPythonInterpreter, expandPath } from './extension';
+import { findPythonInterpreter } from './utils/dfmUtil';
+import { expandPath } from './extension';
+import { getDfmCommand } from './utils/dfmUtil';
 
 export class DVFlowTaskProvider implements vscode.TaskProvider {
     static taskType = 'dvflow';
@@ -22,23 +24,7 @@ export class DVFlowTaskProvider implements vscode.TaskProvider {
     private async discoverTasks(workspaceRoot: string): Promise<vscode.Task[]> {
         const tasks: vscode.Task[] = [];
         try {
-            const config = vscode.workspace.getConfiguration('dvflow');
-            const rawDfmPath = config.get<string>('dfmPath');
-            
-            let command: string;
-            if (rawDfmPath) {
-                const dfmPath = expandPath(rawDfmPath);
-                if (fs.existsSync(dfmPath)) {
-                    command = `"${dfmPath}" util list`;
-                } else {
-                    const pythonPath = await findPythonInterpreter(workspaceRoot);
-                    command = `"${pythonPath}" -m dv_flow.mgr list`;
-                }
-            } else {
-                const pythonPath = await findPythonInterpreter(workspaceRoot);
-                command = `"${pythonPath}" -m dv_flow.mgr list`;
-            }
-            
+            const command = await getDfmCommand(workspaceRoot, 'util list');
             const output = await new Promise<string>((resolve, reject) => {
                 child_process.exec(command, { cwd: workspaceRoot }, (error, stdout, stderr) => {
                     if (error) {
@@ -116,23 +102,8 @@ class DVFlowTaskTerminal implements vscode.Pseudoterminal {
 
     async open(): Promise<void> {
         try {
-            const config = vscode.workspace.getConfiguration('dvflow');
-            const rawDfmPath = config.get<string>('dfmPath');
-            
-            let command: string;
-            if (rawDfmPath) {
-                const dfmPath = expandPath(rawDfmPath);
-                if (fs.existsSync(dfmPath)) {
-                    command = `"${dfmPath}" util run "${this.taskName}"`;
-                } else {
-                    const pythonPath = await findPythonInterpreter(this.rootPath);
-                    command = `"${pythonPath}" -m dv_flow.mgr run "${this.taskName}"`;
-                }
-            } else {
-                const pythonPath = await findPythonInterpreter(this.rootPath);
-                command = `"${pythonPath}" -m dv_flow.mgr run "${this.taskName}"`;
-            }
-            
+            console.log(`rootPath: "${this.rootPath}"`)
+            const command = await getDfmCommand(this.rootPath, `run "${this.taskName}"`);
             this.outputChannel.clear();
             this.outputChannel.show(true);
             this.outputChannel.appendLine(`Running task: ${this.taskName}`);

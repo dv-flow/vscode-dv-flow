@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { findPythonInterpreter } from './extension';
+import { findPythonInterpreter, getDfmCommand } from './utils/dfmUtil';
 
 export class DVFlowDebugConfigProvider implements vscode.DebugConfigurationProvider {
     private outputChannel: vscode.OutputChannel;
@@ -77,15 +77,14 @@ export class DVFlowDebugAdapterFactory implements vscode.DebugAdapterDescriptorF
     async createDebugAdapterDescriptor(
         session: vscode.DebugSession
     ): Promise<vscode.DebugAdapterDescriptor> {
-        const pythonPath = session.configuration.pythonPath;
         const cwd = session.configuration.cwd;
         const taskName = session.configuration.task;
 
-        if (!pythonPath || !cwd || !taskName) {
+        if (!cwd || !taskName) {
             throw new Error('Invalid debug configuration');
         }
 
-        const command = `"${pythonPath}" -m dv_flow.mgr run "${taskName}"`;
+        const command = await getDfmCommand(cwd, `run "${taskName}"`);
         this.outputChannel.appendLine(`Executing: ${command}`);
 
         return new vscode.DebugAdapterInlineImplementation(
@@ -114,9 +113,10 @@ class DVFlowDebugSession implements vscode.DebugAdapter {
                 request_seq: message.seq,
                 success: true,
                 command: message.command,
-                body: {
-                    supportsConfigurationDoneRequest: false
-                }
+body: {
+    supportsConfigurationDoneRequest: false,
+    supportsAnsiCodes: true
+}
             });
             
             this.sendEvent({
@@ -124,27 +124,45 @@ class DVFlowDebugSession implements vscode.DebugAdapter {
                 event: 'initialized'
             });
 
-            const { exec } = require('child_process');
-            exec(this.command, { cwd: this.cwd }, (error: Error | null, stdout: string, stderr: string) => {
-                this.outputChannel.appendLine(stdout);
-                this.outputChannel.appendLine(stderr);
-
-                if (error) {
-                    this.sendEvent({
-                        type: 'event',
-                        event: 'output',
-                        body: {
-                            category: 'stderr',
-                            output: error.message
-                        }
-                    });
-                }
-
-                this.sendEvent({
-                    type: 'event',
-                    event: 'terminated'
-                });
-            });
+const { exec } = require('child_process');
+exec(this.command, { cwd: this.cwd }, (error: Error | null, stdout: string, stderr: string) => {
+    if (stdout) {
+        this.sendEvent({
+            type: 'event',
+            event: 'output',
+            body: {
+                category: 'stdout',
+                output: stdout,
+                ansi: true
+            }
+        });
+    }
+    if (stderr) {
+        this.sendEvent({
+            type: 'event',
+            event: 'output',
+            body: {
+                category: 'stderr',
+                output: stderr,
+                ansi: true
+            }
+        });
+    }
+    if (error) {
+        this.sendEvent({
+            type: 'event',
+            event: 'output',
+            body: {
+                category: 'stderr',
+                output: error.message
+            }
+        });
+    }
+    this.sendEvent({
+        type: 'event',
+        event: 'terminated'
+    });
+});
         } else if (message.type === 'request' && message.command === 'disconnect') {
             this.sendResponse({
                 type: 'response',

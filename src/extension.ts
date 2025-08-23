@@ -5,6 +5,7 @@ import { FlowEditorProvider } from './webview/flowEditor';
 import * as path from 'path';
 import * as child_process from 'child_process';
 import * as fs from 'fs';
+import { getDfmCommand } from './utils/dfmUtil';
 
 // Helper function to expand variables in paths
 export function expandPath(pathWithVars: string): string {
@@ -22,52 +23,6 @@ export function expandPath(pathWithVars: string): string {
     return expandedPath;
 }
 
-// Export this function so it can be used by other parts of the extension
-export async function findPythonInterpreter(rootPath: string): Promise<string> {
-    // Determine packages directory from ivpm.yaml if it exists
-    let packagesDir = 'packages';
-    const ivpmPath = path.join(rootPath, 'ivpm.yaml');
-    
-    if (fs.existsSync(ivpmPath)) {
-        try {
-            const ivpmContent = fs.readFileSync(ivpmPath, 'utf8');
-            // Basic YAML parsing for the specific structure we need
-            const matches = ivpmContent.match(/^package:\s*\n\s+(?:.*\n)*?\s+deps-dir:\s*(.+)$/m);
-            if (matches && matches[1]) {
-                packagesDir = matches[1].trim();
-            }
-        } catch (error) {
-            console.error('Error reading ivpm.yaml:', error instanceof Error ? error.message : String(error));
-        }
-    }
-
-    // Check for python in the packages directory
-    const workspacePythonPath = path.join(rootPath, packagesDir, 'python/bin/python');
-    if (fs.existsSync(workspacePythonPath)) {
-        return workspacePythonPath;
-    }
-
-    // Check for VSCode's Python configuration
-    const pythonConfig = vscode.workspace.getConfiguration('python');
-    const configuredPython = pythonConfig.get<string>('defaultInterpreterPath');
-    if (configuredPython && fs.existsSync(configuredPython)) {
-        return configuredPython;
-    }
-
-    // Fallback to system Python
-    try {
-        const isWindows = process.platform === 'win32';
-        const pythonCmd = isWindows ? 'where python' : 'which python3';
-        const systemPython = child_process.execSync(pythonCmd).toString().trim().split('\n')[0];
-        if (systemPython && fs.existsSync(systemPython)) {
-            return systemPython;
-        }
-    } catch (error) {
-        console.error('Error finding system Python:', error instanceof Error ? error.message : String(error));
-    }
-
-    throw new Error('No Python interpreter found');
-}
 
 let treeDataProvider: NodeDependenciesProvider | undefined;
 let flowFileSystem: FlowFileSystem | undefined;
@@ -120,20 +75,51 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Register run task command
     context.subscriptions.push(
-        vscode.commands.registerCommand('vscode-dv-flow.runTask', async () => {
-            const taskName = await vscode.window.showInputBox({
-                placeHolder: 'Enter the task name to run',
-                prompt: 'Enter the name of the DV Flow task you want to execute'
-            });
+        vscode.commands.registerCommand('vscode-dv-flow.runTask', async (item: FlowTreeItem) => {
+            try {
+                // If invoked from context menu, item will be provided
+                let taskName: string | undefined;
+                if (item && item.label) {
+                    taskName = item.label;
+                } else {
+                    // Fallback: prompt for task name
+                    taskName = await vscode.window.showInputBox({
+                        placeHolder: 'Enter the task name to run',
+                        prompt: 'Enter the name of the DV Flow task you want to execute'
+                    });
+                }
 
-            if (taskName) {
-                const task = new vscode.Task(
-                    { type: 'dvflow', task: taskName },
-                    vscode.TaskScope.Workspace,
-                    taskName,
-                    'dvflow'
-                );
-                await vscode.tasks.executeTask(task);
+                if (!taskName) {
+                    return;
+                }
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (!workspaceRoot) {
+                    vscode.window.showErrorMessage('No workspace folder found');
+                    return;
+                }
+
+                const command = await getDfmCommand(workspaceRoot, `run "${taskName}"`);
+                outputChannel.clear();
+                outputChannel.show(true);
+                outputChannel.appendLine(`Running task: ${taskName}`);
+
+                const process = child_process.exec(command, { cwd: workspaceRoot });
+
+                process.stdout?.on('data', (data: string) => {
+                    outputChannel.append(data);
+                });
+
+                process.stderr?.on('data', (data: string) => {
+                    outputChannel.append(data);
+                });
+
+                process.on('close', (code) => {
+                    const exitMessage = `\nTask ${taskName} completed with exit code ${code}`;
+                    outputChannel.appendLine(exitMessage);
+                });
+            } catch (error) {
+                outputChannel.appendLine(`Error running task: ${error instanceof Error ? error.message : String(error)}`);
             }
         })
     );
@@ -195,23 +181,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 const graphUri = vscode.Uri.parse(`dvflow:/${filename}`);
                 
                 // Try to get graph using dfm if configured, otherwise fall back to Python
-                const config = vscode.workspace.getConfiguration('dvflow');
-                const rawDfmPath = config.get<string>('dfmPath');
-                
-                let command: string;
-                if (rawDfmPath) {
-                    const dfmPath = expandPath(rawDfmPath);
-                    if (fs.existsSync(dfmPath)) {
-                        command = `"${dfmPath}" graph "${labelName}"`;
-                    } else {
-                        const pythonPath = await findPythonInterpreter(rootPath);
-                        command = `"${pythonPath}" -m dv_flow.mgr graph "${labelName}"`;
-                    }
-                } else {
-                    const pythonPath = await findPythonInterpreter(rootPath);
-                    command = `"${pythonPath}" -m dv_flow.mgr graph "${labelName}"`;
-                }
-                
+                const command = await getDfmCommand(rootPath, `graph "${labelName}"`);
                 const dotContent = await new Promise<string>((resolve, reject) => {
                     child_process.exec(command, { cwd: rootPath }, (error: Error | null, stdout: string, stderr: string) => {
                         if (error) {
@@ -295,12 +265,33 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         );
 
+        // Register open import command
+        let openImportDisposable = vscode.commands.registerCommand(
+            'vscode-dv-flow.openImport',
+            async (filePath: string, line?: number) => {
+                try {
+                    const document = await vscode.workspace.openTextDocument(filePath);
+                    const editor = await vscode.window.showTextDocument(document);
+                    if (typeof line === "number" && !isNaN(line)) {
+                        const pos = new vscode.Position(Math.max(0, line - 1), 0);
+                        editor.selection = new vscode.Selection(pos, pos);
+                        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+                    }
+                } catch (error) {
+                    vscode.window.showErrorMessage(
+                        `Failed to open import: ${error instanceof Error ? error.message : String(error)}`
+                    );
+                }
+            }
+        );
+
         context.subscriptions.push(
             updateDisposable, 
             refreshDisposable, 
             openTaskDisposable, 
             openFlowGraphDisposable,
-            goToImportDeclarationDisposable
+            goToImportDeclarationDisposable,
+            openImportDisposable
         );
     }
 }
@@ -309,6 +300,5 @@ export function deactivate() {}
 
 // Export utilities that may be needed by other parts of the extension
 export const utilities = {
-    findPythonInterpreter,
     expandPath
 };
