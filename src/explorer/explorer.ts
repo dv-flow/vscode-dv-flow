@@ -118,7 +118,15 @@ export class NodeDependenciesProvider implements vscode.TreeDataProvider<FlowTre
             });
 
             try {
-                const data = JSON.parse(output);
+                // Extract JSON block from output
+                const lines = output.split('\n');
+                const startIdx = lines.findIndex(line => line.trim().startsWith('{'));
+                const endIdx = lines.map(line => line.trim()).lastIndexOf('}');
+                if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+                    throw new Error('No valid JSON block found in workspace output');
+                }
+                const jsonStr = lines.slice(startIdx, endIdx + 1).join('\n');
+                const data = JSON.parse(jsonStr);
 
                 // Parse imports to extract file and line number if present
                 if (data.imports) {

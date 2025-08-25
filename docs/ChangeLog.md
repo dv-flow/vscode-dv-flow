@@ -1,4 +1,7 @@
 
+# 0.0.7
+- Filter output from the 'workspace' command to avoid extraneous 'print' messages
+
 # 0.0.6
 - Change DFM-discovery method
   - IVPM
