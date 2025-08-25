@@ -2,7 +2,7 @@
   "name": "vscode-dv-flow",
   "displayName": "vscode-dv-flow",
   "description": "VSCode support for the dv-flow build tool",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "matthew-ballance",
   "engines": {
     "vscode": "^1.98.0"
