@@ -84,7 +84,7 @@ tasks:
         assert.ok(taskRefs.length > 0, 'Should have reference to task_a in multiline needs');
     });
     
-    test('findTask finds task in same document', () => {
+    test('findTask finds task in same document', async () => {
         const content = `
 package: test_pkg
 tasks:
@@ -94,7 +94,7 @@ tasks:
     needs: [task_a]
 `;
         const uri = vscode.Uri.parse('file:///test/flow.dv');
-        documentCache.parseFromText(uri, content);
+        await documentCache.parseFromText(uri, content);
         
         // Find task_a through the cache
         const found = documentCache.findTask('task_a');
@@ -103,7 +103,7 @@ tasks:
         assert.strictEqual(found?.task.description, 'First task');
     });
     
-    test('findTask finds task by full name', () => {
+    test('findTask finds task by full name', async () => {
         const content = `
 package: my_pkg
 tasks:
@@ -111,7 +111,7 @@ tasks:
     desc: First task
 `;
         const uri = vscode.Uri.parse('file:///test/flow.dv');
-        documentCache.parseFromText(uri, content);
+        await documentCache.parseFromText(uri, content);
         
         // Find task by full name
         const found = documentCache.findTask('my_pkg.task_a');
@@ -163,7 +163,7 @@ tasks:
         assert.strictEqual(doc2.tasks.get('task_b')?.description, 'Description via doc');
     });
     
-    test('Hover should find task in needs reference from same document', () => {
+    test('Hover should find task in needs reference from same document', async () => {
         // Simulate what the hover provider does:
         // 1. Parse the document
         // 2. Get the task from flowDoc.tasks.get(taskName)
@@ -178,7 +178,7 @@ tasks:
     needs: [build_rtl]
 `;
         const uri = vscode.Uri.parse('file:///test/flow.dv');
-        const flowDoc = documentCache.parseFromText(uri, content);
+        const flowDoc = await documentCache.parseFromText(uri, content);
         
         // This is exactly what getTaskReferenceHover does
         const taskName = 'build_rtl';
@@ -192,7 +192,7 @@ tasks:
         assert.strictEqual(localTask?.fullName, 'test_pkg.build_rtl');
     });
     
-    test('Hover should find task with dotted reference', () => {
+    test('Hover should find task with dotted reference', async () => {
         // Test pkg.task_name style references
         const content = `
 package: my_pkg
@@ -201,7 +201,7 @@ tasks:
     desc: First task
 `;
         const uri = vscode.Uri.parse('file:///test/flow.dv');
-        const flowDoc = documentCache.parseFromText(uri, content);
+        const flowDoc = await documentCache.parseFromText(uri, content);
         
         // Try to find by short name
         const byShortName = flowDoc.tasks.get('task_a');
@@ -268,7 +268,7 @@ tasks:
         assert.deepStrictEqual(doIt?.needs, ['MyTask', 'MyTask2'], 'DoIt should need MyTask and MyTask2');
     });
     
-    test('Hover finds task in needs when using nested package format', () => {
+    test('Hover finds task in needs when using nested package format', async () => {
         // This is the core test that was failing - hover should find tasks in needs references
         const content = `package:
   name: my_package
@@ -283,7 +283,7 @@ tasks:
     - MyTask
 `;
         const uri = vscode.Uri.parse('file:///test/flow.yaml');
-        const flowDoc = documentCache.parseFromText(uri, content);
+        const flowDoc = await documentCache.parseFromText(uri, content);
         
         // This is exactly what getTaskReferenceHover does
         const taskName = 'MyTask';
@@ -293,6 +293,324 @@ tasks:
         assert.strictEqual(localTask?.name, 'MyTask');
         assert.strictEqual(localTask?.description, 'Task that prints a message');
         assert.strictEqual(localTask?.fullName, 'my_package.MyTask');
+    });
+    
+    // Tests for cross-file task references (fragment files)
+    test('Parser parses fragment task reference', async () => {
+        // First parse a fragment file with task definitions
+        const fragmentContent = `tasks:
+  - name: shared_task
+    desc: Task defined in fragment
+    uses: std.Exec
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/fragments/common.dv');
+        const fragmentDoc = await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Verify the fragment has the task
+        assert.strictEqual(fragmentDoc.tasks.size, 1, 'Fragment should have 1 task');
+        assert.ok(fragmentDoc.tasks.has('shared_task'), 'Fragment should have shared_task');
+        
+        // Now parse main file that references the fragment
+        const mainContent = `package:
+  name: main_pkg
+  
+  fragments:
+    - ./fragments/common.dv
+    
+  tasks:
+  - name: main_task
+    needs: [shared_task]
+`;
+        const mainUri = vscode.Uri.parse('file:///test/flow.dv');
+        const mainDoc = await documentCache.parseFromText(mainUri, mainContent);
+        
+        // Verify fragment reference is captured
+        assert.strictEqual(mainDoc.fragments.length, 1, 'Main doc should have 1 fragment');
+        assert.strictEqual(mainDoc.fragments[0].path, './fragments/common.dv');
+    });
+    
+    test('findTask finds task in fragment file', async () => {
+        // Parse fragment file
+        const fragmentContent = `tasks:
+  - name: shared_task
+    desc: Task from fragment
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/fragments/common.dv');
+        await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Parse main file
+        const mainContent = `package:
+  name: main_pkg
+  
+  fragments:
+    - ./fragments/common.dv
+    
+  tasks:
+  - name: main_task
+    needs: [shared_task]
+`;
+        const mainUri = vscode.Uri.parse('file:///test/flow.dv');
+        await documentCache.parseFromText(mainUri, mainContent);
+        
+        // Should be able to find shared_task in cache
+        const found = documentCache.findTask('shared_task');
+        assert.ok(found, 'Should find shared_task in cache');
+        assert.strictEqual(found?.task.name, 'shared_task');
+        assert.strictEqual(found?.task.description, 'Task from fragment');
+    });
+    
+    test('Hover should find task from fragment file', async () => {
+        // Parse fragment file with a task
+        const fragmentContent = `tasks:
+  - name: build_rtl
+    desc: Build RTL from fragment file
+    uses: std.Exec
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/fragments/build.dv');
+        await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Parse main file that references the task
+        const mainContent = `package:
+  name: main_pkg
+  
+  fragments:
+    - ./fragments/build.dv
+    
+  tasks:
+  - name: run_sim
+    needs: [build_rtl]
+`;
+        const mainUri = vscode.Uri.parse('file:///test/flow.dv');
+        const mainDoc = await documentCache.parseFromText(mainUri, mainContent);
+        
+        // Try to find the task reference - should find it in cache
+        const taskName = 'build_rtl';
+        
+        // First check local document (won't be there)
+        const localTask = mainDoc.tasks.get(taskName);
+        assert.ok(!localTask, 'Should NOT find task in local document');
+        
+        // Check cache (should find it there)
+        const found = documentCache.findTask(taskName);
+        assert.ok(found, 'Should find task in cache from fragment file');
+        assert.strictEqual(found?.task.name, 'build_rtl');
+        assert.strictEqual(found?.task.description, 'Build RTL from fragment file');
+    });
+    
+    test('Hover should find task with package prefix from fragment', async () => {
+        // Fragment file in a package
+        const fragmentContent = `package:
+  name: shared_pkg
+  
+  tasks:
+  - name: shared_task
+    desc: Shared task from fragment
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/shared/tasks.dv');
+        await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Main file using the fragment
+        const mainContent = `package:
+  name: main_pkg
+  
+  fragments:
+    - ../shared/tasks.dv
+    
+  tasks:
+  - name: main_task
+    needs: [shared_pkg.shared_task]
+`;
+        const mainUri = vscode.Uri.parse('file:///test/main/flow.dv');
+        await documentCache.parseFromText(mainUri, mainContent);
+        
+        // Should find by full name
+        const found = documentCache.findTask('shared_pkg.shared_task');
+        assert.ok(found, 'Should find task by full package name');
+        assert.strictEqual(found?.task.fullName, 'shared_pkg.shared_task');
+    });
+    
+    // Tests for fragment: top-level key and export: task marker
+    test('Parser handles fragment: top-level key', async () => {
+        const fragmentContent = `fragment:
+
+  tasks:
+  - export: MyTask3
+    uses: std.Message
+    desc: Task that prints a message
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/subdir/flow.yaml');
+        const fragmentDoc = await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Verify the task is found with export: marker
+        assert.strictEqual(fragmentDoc.tasks.size, 1, 'Fragment should have 1 task');
+        assert.ok(fragmentDoc.tasks.has('MyTask3'), 'Fragment should have MyTask3');
+        
+        const task = fragmentDoc.tasks.get('MyTask3');
+        assert.strictEqual(task?.name, 'MyTask3');
+        assert.strictEqual(task?.description, 'Task that prints a message');
+    });
+    
+    test('Parser handles all task name variants (name, export, root, local, override)', async () => {
+        const content = `package:
+  name: test_pkg
+  
+  tasks:
+  - name: regular_task
+    desc: Regular task
+    
+  - export: exported_task
+    desc: Exported task
+    
+  - root: root_task
+    desc: Root task
+    
+  - local: local_task
+    desc: Local task
+    
+  - override: base_task
+    desc: Override task
+`;
+        const uri = vscode.Uri.parse('file:///test/flow.yaml');
+        const doc = await documentCache.parseFromText(uri, content);
+        
+        assert.strictEqual(doc.tasks.size, 5, 'Should find all 5 tasks');
+        assert.ok(doc.tasks.has('regular_task'), 'Should have regular_task');
+        assert.ok(doc.tasks.has('exported_task'), 'Should have exported_task');
+        assert.ok(doc.tasks.has('root_task'), 'Should have root_task');
+        assert.ok(doc.tasks.has('local_task'), 'Should have local_task');
+        assert.ok(doc.tasks.has('base_task'), 'Should have base_task (from override)');
+    });
+    
+    test('Hover finds task defined with export: in fragment', async () => {
+        // Fragment with export: marker
+        const fragmentContent = `fragment:
+
+  tasks:
+  - export: MyTask3
+    uses: std.Message
+    desc: Task from fragment with export marker
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/subdir/flow.yaml');
+        await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Main file referencing the exported task
+        const mainContent = `package:
+  name: my_package
+  
+  fragments:
+    - subdir/flow.yaml
+    
+  tasks:
+  - root: DoIt
+    needs: [MyTask3]
+`;
+        const mainUri = vscode.Uri.parse('file:///test/flow.yaml');
+        await documentCache.parseFromText(mainUri, mainContent);
+        
+        // Should find MyTask3 in cache
+        const found = documentCache.findTask('MyTask3');
+        assert.ok(found, 'Should find MyTask3 from fragment');
+        assert.strictEqual(found?.task.name, 'MyTask3');
+        assert.strictEqual(found?.task.description, 'Task from fragment with export marker');
+    });
+    
+    // Tests for hover on 'uses:' references
+    test('Hover on uses reference to task in same file', async () => {
+        const content = `package:
+  name: test_pkg
+  
+  tasks:
+  - name: BaseTask
+    desc: Base task type
+    
+  - name: DerivedTask
+    uses: BaseTask
+    desc: Derived from BaseTask
+`;
+        const uri = vscode.Uri.parse('file:///test/flow.yaml');
+        const flowDoc = await documentCache.parseFromText(uri, content);
+        
+        // This simulates hovering over "BaseTask" in "uses: BaseTask"
+        const taskName = 'BaseTask';
+        
+        // The hover provider calls getTaskTypeHover which now checks cache
+        const found = documentCache.findTask(taskName);
+        assert.ok(found, 'Should find BaseTask in cache');
+        assert.strictEqual(found?.task.name, 'BaseTask');
+        assert.strictEqual(found?.task.description, 'Base task type');
+    });
+    
+    test('Hover on uses reference with qualified name', async () => {
+        const content = `package:
+  name: test_pkg
+  
+  tasks:
+  - name: BaseTask
+    desc: Base task type
+    
+  - name: DerivedTask
+    uses: test_pkg.BaseTask
+    desc: Uses qualified name
+`;
+        const uri = vscode.Uri.parse('file:///test/flow.yaml');
+        await documentCache.parseFromText(uri, content);
+        
+        // Hover on "test_pkg.BaseTask"
+        const found = documentCache.findTask('test_pkg.BaseTask');
+        assert.ok(found, 'Should find task by qualified name');
+        assert.strictEqual(found?.task.fullName, 'test_pkg.BaseTask');
+    });
+    
+    test('Hover on uses reference to task in fragment', async () => {
+        // Fragment with base task
+        const fragmentContent = `tasks:
+  - name: BaseTask
+    desc: Base task from fragment
+    uses: std.Message
+`;
+        const fragmentUri = vscode.Uri.parse('file:///test/fragments/base.dv');
+        await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Main file using the base task
+        const mainContent = `package:
+  name: main_pkg
+  
+  fragments:
+    - ./fragments/base.dv
+    
+  tasks:
+  - name: DerivedTask
+    uses: BaseTask
+    desc: Derived from fragment task
+`;
+        const mainUri = vscode.Uri.parse('file:///test/flow.yaml');
+        await documentCache.parseFromText(mainUri, mainContent);
+        
+        // Hover on "BaseTask" in uses line
+        const found = documentCache.findTask('BaseTask');
+        assert.ok(found, 'Should find BaseTask from fragment');
+        assert.strictEqual(found?.task.name, 'BaseTask');
+        assert.strictEqual(found?.task.description, 'Base task from fragment');
+        assert.ok(found?.task.location.file.includes('base.dv'), 'Should be from fragment file');
+    });
+    
+    test('Hover on uses with built-in type shows type info', async () => {
+        // Built-in types like std.Message should show static info
+        // (not from cache since they're Python plugins)
+        const content = `tasks:
+  - name: MyTask
+    uses: std.Message
+    desc: Uses built-in type
+`;
+        const uri = vscode.Uri.parse('file:///test/flow.yaml');
+        await documentCache.parseFromText(uri, content);
+        
+        // Try to find std.Message - should not be in cache
+        const found = documentCache.findTask('std.Message');
+        assert.ok(!found, 'Built-in types should not be in cache');
+        
+        // The hover provider will fall back to static task type info
+        // This is the expected behavior for built-in types
     });
 });
 

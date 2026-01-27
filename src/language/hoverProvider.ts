@@ -21,7 +21,7 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         token: vscode.CancellationToken
     ): Promise<vscode.Hover | null> {
         // Parse the current document
-        const flowDoc = this.documentCache.parseFromText(document.uri, document.getText());
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
         
         // Get the word at the position
         const wordRange = document.getWordRangeAtPosition(position, /[a-zA-Z_][a-zA-Z0-9_.]*/);
@@ -140,6 +140,13 @@ export class FlowHoverProvider implements vscode.HoverProvider {
     }
 
     private getTaskTypeHover(typeName: string): vscode.Hover | null {
+        // First, check if this is a user-defined task
+        const found = this.documentCache.findTask(typeName);
+        if (found) {
+            // It's a user-defined task, show full task hover
+            return this.getTaskHover(typeName, found.task);
+        }
+        
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
         

@@ -77,7 +77,7 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
     ): Promise<vscode.CompletionItem[] | vscode.CompletionList | null> {
         const line = document.lineAt(position.line).text;
         const linePrefix = line.substring(0, position.character);
-        const flowDoc = this.documentCache.parseFromText(document.uri, document.getText());
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
 
         // Determine completion context
         const completionContext = this.determineContext(linePrefix, line, document, position);

@@ -144,7 +144,7 @@ export class FlowDiagnosticsProvider {
     private async validateLocally(document: vscode.TextDocument): Promise<vscode.Diagnostic[]> {
         const diagnostics: vscode.Diagnostic[] = [];
         const text = document.getText();
-        const flowDoc = this.documentCache.parseFromText(document.uri, text);
+        const flowDoc = await this.documentCache.parseFromText(document.uri, text);
 
         // Check for duplicate task names
         const taskNames = new Map<string, number>();
@@ -316,7 +316,7 @@ export class FlowDiagnosticsProvider {
                     
                     if (result.errors) {
                         for (const error of result.errors) {
-                            const diagnostic = this.createDiagnosticFromDfm(error, document);
+                            const diagnostic = await this.createDiagnosticFromDfm(error, document);
                             if (diagnostic) {
                                 diagnostics.push(diagnostic);
                             }
@@ -325,7 +325,7 @@ export class FlowDiagnosticsProvider {
                     
                     if (result.warnings) {
                         for (const warning of result.warnings) {
-                            const diagnostic = this.createDiagnosticFromDfm(warning, document, vscode.DiagnosticSeverity.Warning);
+                            const diagnostic = await this.createDiagnosticFromDfm(warning, document, vscode.DiagnosticSeverity.Warning);
                             if (diagnostic) {
                                 diagnostics.push(diagnostic);
                             }
@@ -339,7 +339,7 @@ export class FlowDiagnosticsProvider {
                                 : marker.severity === 'warning'
                                     ? vscode.DiagnosticSeverity.Warning
                                     : vscode.DiagnosticSeverity.Information;
-                            const diagnostic = this.createDiagnosticFromDfm(marker, document, severity);
+                            const diagnostic = await this.createDiagnosticFromDfm(marker, document, severity);
                             if (diagnostic) {
                                 diagnostics.push(diagnostic);
                             }
@@ -382,11 +382,11 @@ export class FlowDiagnosticsProvider {
         return diagnostics;
     }
 
-    private createDiagnosticFromDfm(
+    private async createDiagnosticFromDfm(
         error: any, 
         document: vscode.TextDocument,
         defaultSeverity: vscode.DiagnosticSeverity = vscode.DiagnosticSeverity.Error
-    ): vscode.Diagnostic | null {
+    ): Promise<vscode.Diagnostic | null> {
         let line = 0;
         let col = 0;
         let message = '';
@@ -412,6 +412,39 @@ export class FlowDiagnosticsProvider {
             }
         } else {
             return null;
+        }
+
+        // Handle UnusedTask warnings - find the task location and update message
+        if (error.type === 'UnusedTask' && error.task) {
+            const flowDoc = await this.documentCache.getDocument(document.uri);
+            if (flowDoc) {
+                // Try to find the task in the document
+                // Note: error.task is the fully qualified name (e.g., "my_package.Other")
+                // but tasks are keyed by local name, so we need to search by fullName
+                let foundTask: any = null;
+                for (const [, task] of flowDoc.tasks) {
+                    if (task.fullName === error.task) {
+                        foundTask = task;
+                        break;
+                    }
+                }
+                
+                if (foundTask) {
+                    line = foundTask.location.line - 1;
+                    col = foundTask.location.column - 1;
+                    
+                    // Different messages based on scope
+                    if (foundTask.scope === 'local') {
+                        message = `Task '${error.task}' is defined but never referenced within this file.`;
+                    } else {
+                        message = `Task '${error.task}' is defined but never referenced. Consider marking it as 'export' or 'root' if it should be callable from outside.`;
+                    }
+                } else {
+                    // Task not found in this document - it's defined in another file (parent or fragment)
+                    // Don't show this warning in the current document
+                    return null;
+                }
+            }
         }
 
         // Ensure line is within document bounds

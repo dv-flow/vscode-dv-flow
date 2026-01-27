@@ -22,7 +22,21 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         token: vscode.CancellationToken
     ): Promise<vscode.Definition | vscode.LocationLink[] | null> {
         // Parse the current document
-        const flowDoc = this.documentCache.parseFromText(document.uri, document.getText());
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
+        
+        const line = document.lineAt(position.line).text;
+        
+        // Check for fragment path (e.g., "  - ./fragments/common.dv")
+        const fragmentMatch = line.match(/^\s*-\s*(.+\.(?:dv|yaml|yml))\s*$/);
+        if (fragmentMatch) {
+            return this.findFragmentDefinition(fragmentMatch[1].trim().replace(/^["']|["']$/g, ''), document);
+        }
+        
+        // Check for import path (e.g., "  - common: ./common/common.dv")
+        const importPathMatch = line.match(/^\s*-\s*[a-zA-Z_][a-zA-Z0-9_-]*:\s*(.+\.(?:dv|yaml|yml))\s*$/);
+        if (importPathMatch) {
+            return this.findFragmentDefinition(importPathMatch[1].trim().replace(/^["']|["']$/g, ''), document);
+        }
         
         // Get the word at the position
         const wordRange = document.getWordRangeAtPosition(position, /[a-zA-Z_][a-zA-Z0-9_.]*/);
@@ -31,7 +45,6 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         }
         
         const word = document.getText(wordRange);
-        const line = document.lineAt(position.line).text;
         
         // Determine what kind of reference this is
         const context = this.determineContext(line, position.character, word);
@@ -65,6 +78,7 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         }
         
         // Check for needs list item format: "  - task_name"
+        // But exclude file paths (which contain / or .)
         if (trimmed.match(/^-\s*["']?[a-zA-Z_][a-zA-Z0-9_]*["']?\s*$/)) {
             // This could be a needs list item - need to check context
             // For now, treat any list item that looks like a task name as a potential needs reference
@@ -90,7 +104,6 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
 
     private async findTaskTypeDefinition(typeName: string): Promise<vscode.Location[] | null> {
         // For task types like std.FileSet, try to find the definition
-        // This would ideally come from plugin metadata
         
         // Check if it's a reference to a task in the current workspace
         const found = this.documentCache.findTask(typeName);
@@ -98,8 +111,76 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
             return [this.locationFromFlowLocation(found.task.location)];
         }
         
-        // For plugin tasks, we can't go to definition (they're in Python)
-        // But we could potentially show the plugin file
+        // Check if this is a library package reference (e.g., std.Message)
+        if (typeName.includes('.')) {
+            const parts = typeName.split('.');
+            const packageName = parts[0];
+            const taskName = parts.slice(1).join('.');
+            
+            // Try to load the library package
+            const packageLocation = await this.findLibraryPackageLocation(packageName);
+            if (packageLocation) {
+                // Load the package's flow file
+                const flowFile = path.join(packageLocation, 'flow.dv');
+                try {
+                    const flowUri = vscode.Uri.file(flowFile);
+                    await this.documentCache.getDocument(flowUri);
+                    
+                    // Now try to find the task again
+                    const foundAfterLoad = this.documentCache.findTask(typeName);
+                    if (foundAfterLoad) {
+                        return [this.locationFromFlowLocation(foundAfterLoad.task.location)];
+                    }
+                } catch (error) {
+                    console.debug(`Could not load library package ${packageName}:`, error);
+                }
+            }
+        }
+        
+        // For plugin tasks we couldn't resolve, return null
+        return null;
+    }
+    
+    /**
+     * Find the location of a library package using dfm
+     */
+    private async findLibraryPackageLocation(packageName: string): Promise<string | null> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                return null;
+            }
+            
+            // Use the getDfmCommand utility to get the correct dfm command
+            const { getDfmCommand, getDfmWorkingDirectory } = require('../utils/dfmUtil');
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            
+            const workspaceRoot = workspaceFolder.uri.fsPath;
+            const cwd = getDfmWorkingDirectory();
+            
+            // getDfmCommand returns the full command including the subcommand
+            const fullCommand = await getDfmCommand(workspaceRoot, `show package ${packageName}`);
+            
+            console.log(`[definitionProvider] Executing: ${fullCommand} in ${cwd}`);
+            const result = await execAsync(fullCommand, { cwd });
+            
+            // Parse the output to find the Location: line
+            const lines = result.stdout.split('\n');
+            for (const line of lines) {
+                const match = line.match(/^Location:\s*(.+)$/);
+                if (match) {
+                    const location = match[1].trim();
+                    console.log(`[definitionProvider] Found package ${packageName} at: ${location}`);
+                    return location;
+                }
+            }
+            
+            console.log(`[definitionProvider] No location found in output for package ${packageName}`);
+        } catch (error) {
+            console.debug(`Could not find package location for ${packageName}:`, error);
+        }
         
         return null;
     }
@@ -254,6 +335,30 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         return null;
     }
 
+    private async findFragmentDefinition(
+        fragmentPath: string,
+        document: vscode.TextDocument
+    ): Promise<vscode.Location[] | null> {
+        // Resolve the fragment path relative to the current document
+        const resolvedPath = path.isAbsolute(fragmentPath)
+            ? fragmentPath
+            : path.join(path.dirname(document.uri.fsPath), fragmentPath);
+        
+        try {
+            // Check if file exists
+            await vscode.workspace.fs.stat(vscode.Uri.file(resolvedPath));
+            
+            // Return location pointing to the start of the file
+            return [new vscode.Location(
+                vscode.Uri.file(resolvedPath),
+                new vscode.Position(0, 0)
+            )];
+        } catch {
+            // File doesn't exist
+            return null;
+        }
+    }
+
     private locationFromFlowLocation(loc: FlowLocation): vscode.Location {
         return new vscode.Location(
             vscode.Uri.file(loc.file),
@@ -280,7 +385,7 @@ export class FlowReferencesProvider implements vscode.ReferenceProvider {
         token: vscode.CancellationToken
     ): Promise<vscode.Location[] | null> {
         // Parse the current document
-        const flowDoc = this.documentCache.parseFromText(document.uri, document.getText());
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
         
         // Get the word at the position
         const wordRange = document.getWordRangeAtPosition(position, /[a-zA-Z_][a-zA-Z0-9_.]*/);

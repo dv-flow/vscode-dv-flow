@@ -25,7 +25,7 @@ export class FlowRenameProvider implements vscode.RenameProvider {
         }
 
         const word = document.getText(wordRange);
-        const flowDoc = this.documentCache.parseFromText(document.uri, document.getText());
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
         const line = document.lineAt(position.line).text;
 
         // Check if this is a renameable symbol
@@ -57,7 +57,7 @@ export class FlowRenameProvider implements vscode.RenameProvider {
         }
 
         const oldName = document.getText(wordRange);
-        const flowDoc = this.documentCache.parseFromText(document.uri, document.getText());
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
 
         const workspaceEdit = new vscode.WorkspaceEdit();
 

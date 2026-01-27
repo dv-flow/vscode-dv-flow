@@ -25,6 +25,7 @@ export interface FlowLocation {
 export interface FlowTaskDef {
     name: string;
     fullName: string;  // Package-qualified name
+    scope?: 'name' | 'export' | 'root' | 'local' | 'override';  // Task scope marker
     uses?: string;
     description?: string;
     needs?: string[];
@@ -151,6 +152,13 @@ export class FlowDocumentParser {
                     continue;
                 }
                 
+                // Check for fragment block start (fragment: with no value means nested structure)
+                if (trimmed === 'fragment:') {
+                    inPackageBlock = true;  // Reuse package block logic for fragments
+                    currentSection = null;
+                    continue;
+                }
+                
                 // Check for package name (inline format: package: name)
                 const packageMatch = trimmed.match(/^package:\s*(.+)$/);
                 if (packageMatch) {
@@ -261,17 +269,19 @@ export class FlowDocumentParser {
         const trimmed = line.trim();
         const indent = line.length - line.trimStart().length;
 
-        // Task list item: "- name: task_name"
-        const taskNameMatch = trimmed.match(/^-\s*name:\s*(.+)$/);
+        // Task list item: "- name: task_name" or "- export: task_name" or "- root: task_name" etc.
+        const taskNameMatch = trimmed.match(/^-\s*(name|export|root|local|override):\s*(.+)$/);
         if (taskNameMatch) {
-            const taskName = taskNameMatch[1].trim().replace(/^["']|["']$/g, '');
+            const scopeMarker = taskNameMatch[1] as 'name' | 'export' | 'root' | 'local' | 'override';
+            const taskName = taskNameMatch[2].trim().replace(/^["']|["']$/g, '');
             const task: FlowTaskDef = {
                 name: taskName,
                 fullName: doc.packageName ? `${doc.packageName}.${taskName}` : taskName,
+                scope: scopeMarker,
                 location: {
                     file,
                     line: lineNum + 1,
-                    column: line.indexOf('name:') + 1
+                    column: line.indexOf(`${scopeMarker}:`) + 1
                 },
                 params: new Map()
             };
@@ -560,7 +570,24 @@ export class FlowDocumentCache {
             const content = await vscode.workspace.fs.readFile(uri);
             const text = Buffer.from(content).toString('utf-8');
             const doc = this.parser.parse(uri, text);
+            
+            // If this is a fragment file (no package name), inherit from parent
+            if (!doc.packageName && text.includes('fragment:')) {
+                const parentPackageName = await this.findParentPackageName(uri);
+                if (parentPackageName) {
+                    doc.packageName = parentPackageName;
+                    // Update fullNames of all tasks with the inherited package name
+                    for (const [name, task] of doc.tasks) {
+                        task.fullName = `${parentPackageName}.${name}`;
+                    }
+                }
+            }
+            
             this.cache.set(key, doc);
+            
+            // Automatically load fragments referenced by this document
+            await this.loadFragments(doc, uri);
+            
             return doc;
         } catch (error) {
             console.error(`Error parsing flow document ${uri.fsPath}:`, error);
@@ -571,10 +598,108 @@ export class FlowDocumentCache {
     /**
      * Parse a document from text (for unsaved documents)
      */
-    parseFromText(uri: vscode.Uri, text: string): FlowDocument {
+    async parseFromText(uri: vscode.Uri, text: string): Promise<FlowDocument> {
         const doc = this.parser.parse(uri, text);
+        
+        // If this is a fragment file (no package name), inherit from parent
+        if (!doc.packageName && text.includes('fragment:')) {
+            const parentPackageName = await this.findParentPackageName(uri);
+            if (parentPackageName) {
+                doc.packageName = parentPackageName;
+                // Update fullNames of all tasks with the inherited package name
+                for (const [name, task] of doc.tasks) {
+                    task.fullName = `${parentPackageName}.${name}`;
+                }
+            }
+        }
+        
         this.cache.set(uri.toString(), doc);
+        
+        // Automatically load fragments referenced by this document
+        await this.loadFragments(doc, uri);
+        
         return doc;
+    }
+    
+    /**
+     * Load fragment files referenced by a document
+     */
+    private async loadFragments(doc: FlowDocument, parentUri: vscode.Uri): Promise<void> {
+        const parentDir = path.dirname(parentUri.fsPath);
+        
+        for (const fragment of doc.fragments) {
+            // Resolve fragment path relative to parent document
+            const fragmentPath = path.isAbsolute(fragment.path)
+                ? fragment.path
+                : path.resolve(parentDir, fragment.path);
+            
+            const fragmentUri = vscode.Uri.file(fragmentPath);
+            
+            // Check if already cached
+            const cached = this.cache.get(fragmentUri.toString());
+            if (cached) {
+                continue;
+            }
+            
+            // Try to load the fragment
+            try {
+                await this.getDocument(fragmentUri);
+            } catch (err) {
+                // Fragment file might not exist yet or have errors
+                // This is okay - diagnostics will report the error
+                console.debug(`Could not load fragment ${fragmentPath}:`, err);
+            }
+        }
+    }
+
+    /**
+     * Find the parent package name by searching upwards for a flow.yaml with package:
+     */
+    private async findParentPackageName(uri: vscode.Uri): Promise<string | undefined> {
+        let currentDir = path.dirname(uri.fsPath);
+        
+        // Search up to 5 levels up for a parent flow.yaml
+        for (let i = 0; i < 5; i++) {
+            const flowYamlPath = path.join(currentDir, 'flow.yaml');
+            const flowYmlPath = path.join(currentDir, 'flow.yml');
+            
+            // Try flow.yaml first
+            try {
+                const flowUri = vscode.Uri.file(flowYamlPath);
+                const content = await vscode.workspace.fs.readFile(flowUri);
+                const text = Buffer.from(content).toString('utf-8');
+                
+                // Quick parse to extract package name
+                const packageMatch = text.match(/^package:\s*(.+)$/m) || text.match(/^\s+name:\s*(.+)$/m);
+                if (packageMatch) {
+                    return packageMatch[1].trim();
+                }
+            } catch {
+                // Try flow.yml
+                try {
+                    const flowUri = vscode.Uri.file(flowYmlPath);
+                    const content = await vscode.workspace.fs.readFile(flowUri);
+                    const text = Buffer.from(content).toString('utf-8');
+                    
+                    const packageMatch = text.match(/^package:\s*(.+)$/m) || text.match(/^\s+name:\s*(.+)$/m);
+                    if (packageMatch) {
+                        return packageMatch[1].trim();
+                    }
+                } catch {
+                    // Neither file exists, continue
+                }
+            }
+            
+            // Move up one directory
+            const parentDir = path.dirname(currentDir);
+            if (parentDir === currentDir) {
+                // Reached root
+                break;
+            }
+            currentDir = parentDir;
+        }
+        
+        return undefined;
     }
 
     /**
