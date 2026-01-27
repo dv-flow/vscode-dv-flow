@@ -35,14 +35,17 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
         webviewPanel.webview.html = this.getHtmlForWebview();
 
         function updateWebview() {
+            const content = document.getText();
+            console.log(`[FlowGraph] updateWebview called, content length: ${content.length}`);
+            console.log(`[FlowGraph] content preview: ${content.substring(0, 200)}`);
             webviewPanel.webview.postMessage({
                 type: 'update',
-                content: document.getText(),
+                content: content,
             });
         }
 
-        // Initial content
-        updateWebview();
+        // Don't send initial content here - wait for 'ready' message from webview
+        // updateWebview();
 
         // Hook up event handlers to update the webview when the document changes
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
@@ -58,8 +61,10 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
 
         // Handle messages from the webview
         webviewPanel.webview.onDidReceiveMessage(e => {
+            console.log(`[FlowGraph] Received message from webview: ${e.type}`);
             switch (e.type) {
                 case 'ready':
+                    console.log('[FlowGraph] Webview ready, sending content');
                     updateWebview();
                     return;
                 case 'openTaskDefinition':
@@ -356,12 +361,21 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                 // Handle messages from the extension
                 window.addEventListener('message', event => {
                             const message = event.data;
+                            console.log('[FlowGraph WebView] Received message:', message.type);
                             switch (message.type) {
                                 case 'update':
+                                    console.log('[FlowGraph WebView] Content length:', message.content ? message.content.length : 0);
+                                    console.log('[FlowGraph WebView] Content preview:', message.content ? message.content.substring(0, 200) : 'EMPTY');
+                                    if (!message.content || message.content.trim().length === 0) {
+                                        console.error('[FlowGraph WebView] Empty content received!');
+                                        return;
+                                    }
                                     try {
+                                        console.log('[FlowGraph WebView] Calling graphviz.renderDot...');
                                         graphviz
                                             .renderDot(message.content)
                                             .on("end", () => {
+                                                console.log('[FlowGraph WebView] Graph rendered successfully');
                                                 // After rendering, initialize zoom and scale
                                                 scaleToFit();
                                                 setTimeout(() => {
@@ -374,13 +388,14 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                                             }, 100);
                                             });
                                     } catch (error) {
-                                        console.error('Failed to render graph:', error);
+                                        console.error('[FlowGraph WebView] Failed to render graph:', error);
                                     }
                                     break;
                             }
                         });
 
                         // Signal that we're ready to receive content
+                        console.log('[FlowGraph WebView] Sending ready message');
                         vscode.postMessage({ type: 'ready' });
                     }())
                 </script>
