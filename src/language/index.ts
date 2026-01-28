@@ -16,3 +16,4 @@ export * from './definitionProvider';
 export * from './diagnosticsProvider';
 export * from './renameProvider';
 export * from './completionProvider';
+export * from './codeLensProvider';

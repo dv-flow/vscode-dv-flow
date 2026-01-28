@@ -4,6 +4,48 @@ All notable changes to the "vscode-dv-flow" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+
+### Added
+
+- **Task Graph Viewer - Phase 2: Advanced Interactivity**
+  
+  - **Node Selection**: Click nodes to select and highlight them
+    - Single-click to select and show task details
+    - Double-click to open task definition
+    - Visual feedback with focus border highlight
+    - Clear selection with Escape or by clicking canvas
+  
+  - **Task Details Integration**: Seamless integration with Task Details Panel
+    - Clicking a node automatically opens/updates Task Details Panel
+    - View task name, type, source location, dependencies, and dependents
+    - Quick navigation between related tasks
+  
+  - **Search & Filter**: Find tasks quickly with real-time search
+    - Search input in toolbar (Ctrl+F to focus)
+    - Real-time highlighting of matching nodes
+    - Navigate between matches with Enter/Shift+Enter or arrow buttons
+    - Match counter shows current position (e.g., "1 / 5")
+    - Auto-centers graph on current match with smooth animation
+  
+  - **Enhanced Context Menu**: Extended right-click options
+    - "Show Task Details" - Open Task Details Panel
+    - "Go to Definition" - Jump to source code
+  
+  - **Keyboard Shortcuts**: Efficient keyboard navigation
+    - `Ctrl+F` - Focus search
+    - `Enter` - Next search result
+    - `Shift+Enter` - Previous search result
+    - `Escape` - Clear selection and search
+    - `Enter` (when node selected) - Go to definition
+  
+  - **Visual Enhancements**: Better feedback and polish
+    - Smooth CSS transitions for all state changes
+    - Theme-aware search match highlighting
+    - Pulse animation for current search result
+    - Improved hover states
+    - Better focus management
+
 ## [0.3.1] - 2026-01-26
 
 ### Added

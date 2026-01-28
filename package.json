@@ -103,6 +103,12 @@
         "icon": "$(type-hierarchy)"
       },
       {
+        "command": "vscode-dv-flow.openFlowGraphFromEditor",
+        "title": "Open Task Graph View",
+        "category": "DV Flow",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "vscode-dv-flow.updateTree",
         "title": "Update DV-Flow Tree",
         "category": "DV Flow"
@@ -264,6 +270,13 @@
           "command": "vscode-dv-flow.goToImportDeclaration",
           "when": "view == dvFlowWorkspace && viewItem == localImport",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vscode-dv-flow.openFlowGraphFromEditor",
+          "when": "resourceLangId == dvflow || resourceFilename =~ /flow\\.(yaml|yml|dv)$/",
+          "group": "navigation@1"
         }
       ],
       "explorer/context": [
@@ -436,14 +449,22 @@
     "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/dagre": "^0.7.53",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.98.0",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
+    "d3": "^7.9.0",
+    "dagre": "^0.8.5",
     "eslint": "^9.21.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "typescript": "^5.7.3"
   },
   "extensionDependencies": [

@@ -16,7 +16,8 @@ import {
     FlowReferencesProvider,
     FlowDiagnosticsProvider,
     FlowRenameProvider,
-    FlowCompletionProvider
+    FlowCompletionProvider,
+    FlowCodeLensProvider
 } from './language';
 import { RunPanelProvider, TaskDetailsPanelProvider, PerfettoPanel, PerfettoEditorProvider } from './panels';
 
@@ -34,6 +35,119 @@ export function expandPath(pathWithVars: string): string {
     expandedPath = expandedPath.replace(/^~/, process.env.HOME || process.env.USERPROFILE || '');
     
     return expandedPath;
+}
+
+// Transform DOT graph to replace node IDs with task names in edge labels and tooltips
+function transformDotGraphLabels(dotContent: string): string {
+    // Build a map of node ID to task name by parsing node definitions
+    const nodeMap = new Map<string, string>();
+    
+    // Match node definitions like: n1 [label="TaskName" ...]
+    // Match only lines with -> to avoid confusion with node definitions
+    const lines = dotContent.split('\n');
+    
+    // First pass: extract node labels and remove graph title
+    for (const line of lines) {
+        if (line.includes('->')) {
+            continue; // Skip edge lines
+        }
+        
+        // Check for graph-level label attribute and skip it
+        if (line.trim().startsWith('graph [') || line.trim().startsWith('label=')) {
+            continue;
+        }
+        
+        const nodeMatch = /(\w+)\s*\[([^\]]+)\]/.exec(line);
+        if (nodeMatch) {
+            const nodeId = nodeMatch[1];
+            const attributes = nodeMatch[2];
+            const labelMatch = /label\s*=\s*"([^"]+)"/.exec(attributes);
+            if (labelMatch) {
+                nodeMap.set(nodeId, labelMatch[1]);
+            }
+        }
+    }
+    
+    console.log(`[FlowGraph] Found ${nodeMap.size} nodes with labels`);
+    if (nodeMap.size > 0) {
+        console.log(`[FlowGraph] Sample node mappings:`, Array.from(nodeMap.entries()).slice(0, 3));
+    }
+    
+    // Second pass: transform edge labels and remove graph title
+    let edgeCount = 0;
+    const transformedLines = lines.map(line => {
+        // Remove graph-level label statements
+        if (line.trim().startsWith('label=') || 
+            (line.trim().startsWith('graph [') && line.includes('label='))) {
+            console.log(`[FlowGraph] Removing graph title line: ${line.trim()}`);
+            return ''; // Remove the line
+        }
+        
+        // Only process lines with edges
+        if (!line.includes('->')) {
+            return line;
+        }
+        
+        // Try matching edges with attributes first: n1 -> n2 [...]
+        const edgeWithAttrs = /(\w+)\s*->\s*(\w+)\s*\[([^\]]+)\]/.exec(line);
+        if (edgeWithAttrs) {
+            edgeCount++;
+            const fromNode = edgeWithAttrs[1];
+            const toNode = edgeWithAttrs[2];
+            let attributes = edgeWithAttrs[3];
+            
+            const fromTask = nodeMap.get(fromNode) || fromNode;
+            const toTask = nodeMap.get(toNode) || toNode;
+            
+            if (edgeCount <= 2) {
+                console.log(`[FlowGraph] Adding tooltip for edge: ${fromNode}->${toNode} = ${fromTask} → ${toTask}`);
+            }
+            
+            // Remove any existing label attribute
+            attributes = attributes.replace(/label\s*=\s*"([^"]*)"\s*,?\s*/g, '');
+            
+            // Replace or add tooltip with task names
+            if (/tooltip\s*=/.test(attributes)) {
+                attributes = attributes.replace(/tooltip\s*=\s*"([^"]*)"/g, `tooltip="${fromTask} → ${toTask}"`);
+            } else {
+                // Add comma if there are other attributes
+                if (attributes.trim().length > 0 && !attributes.trim().endsWith(',')) {
+                    attributes = attributes.trim() + ', ';
+                }
+                attributes += `tooltip="${fromTask} → ${toTask}"`;
+            }
+            
+            // Reconstruct the line
+            const indent = line.match(/^\s*/)?.[0] || '';
+            return `${indent}${fromNode} -> ${toNode} [${attributes}]`;
+        }
+        
+        // Try matching edges without attributes: n1 -> n2;
+        const edgeSimple = /(\w+)\s*->\s*(\w+)\s*;/.exec(line);
+        if (edgeSimple) {
+            edgeCount++;
+            const fromNode = edgeSimple[1];
+            const toNode = edgeSimple[2];
+            
+            const fromTask = nodeMap.get(fromNode) || fromNode;
+            const toTask = nodeMap.get(toNode) || toNode;
+            
+            if (edgeCount <= 2) {
+                console.log(`[FlowGraph] Adding tooltip for simple edge: ${fromNode}->${toNode} = ${fromTask} → ${toTask}`);
+            }
+            
+            // Add only tooltip attribute (no label)
+            const indent = line.match(/^\s*/)?.[0] || '';
+            return `${indent}${fromNode} -> ${toNode} [tooltip="${fromTask} → ${toTask}"];`;
+        }
+        
+        return line;
+    });
+    
+    console.log(`[FlowGraph] Transformed ${edgeCount} edges`);
+    
+    // Filter out empty lines that were removed
+    return transformedLines.filter(line => line !== '').join('\n');
 }
 
 
@@ -238,13 +352,17 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.workspace.registerFileSystemProvider('dvflow', flowFileSystem, {
             isCaseSensitive: true,
             isReadonly: false
-        }),
-        FlowEditorProvider.register(context)
+        })
     );
 
     if (rootPath) {
         // Initialize the workspace manager
         workspaceManager = WorkspaceManager.getInstance(rootPath);
+        
+        // Register flow editor provider with workspace manager
+        context.subscriptions.push(
+            FlowEditorProvider.register(context, workspaceManager)
+        );
         
         // Initialize document cache for language features
         documentCache = new FlowDocumentCache();
@@ -285,6 +403,12 @@ export async function activate(context: vscode.ExtensionContext) {
         const completionProvider = new FlowCompletionProvider(documentCache, workspaceManager);
         context.subscriptions.push(
             vscode.languages.registerCompletionItemProvider(flowSelector, completionProvider, ':', '.', ' ', '$', '{')
+        );
+        
+        // CodeLens provider
+        const codeLensProvider = new FlowCodeLensProvider(documentCache, workspaceManager);
+        context.subscriptions.push(
+            vscode.languages.registerCodeLensProvider(flowSelector, codeLensProvider)
         );
         
         // Diagnostics provider
@@ -440,10 +564,16 @@ export async function activate(context: vscode.ExtensionContext) {
                 });
 
                 console.log(`[FlowGraph] DOT content length: ${dotContent.length}`);
+                console.log(`[FlowGraph] ============ TRANSFORMING GRAPH LABELS ============`);
+                
+                // Transform DOT content to replace node IDs with task names in edge labels
+                const transformedDotContent = transformDotGraphLabels(dotContent);
+                console.log(`[FlowGraph] Transformed DOT content length: ${transformedDotContent.length}`);
+                console.log(`[FlowGraph] ============================================`);
                 
                 // Write the DOT content to the virtual file
                 if (flowFileSystem) {
-                    flowFileSystem.writeFile(graphUri, Buffer.from(dotContent), { create: true, overwrite: true });
+                    flowFileSystem.writeFile(graphUri, Buffer.from(transformedDotContent), { create: true, overwrite: true });
                     console.log(`[FlowGraph] Written content to virtual file`);
                     
                     // Open the file with the custom flow graph editor and get the panel
@@ -463,6 +593,136 @@ export async function activate(context: vscode.ExtensionContext) {
                 vscode.window.showErrorMessage(`Failed to open flow graph: ${error instanceof Error ? error.message : String(error)}`);
             }
         });
+
+        // Register open flow graph from editor command (for CodeLens and context menu)
+        let openFlowGraphFromEditorDisposable = vscode.commands.registerCommand(
+            'vscode-dv-flow.openFlowGraphFromEditor', 
+            async (taskName?: string, documentUri?: vscode.Uri) => {
+                try {
+                    // If taskName is not provided (context menu), try to extract from cursor position
+                    if (!taskName) {
+                        const editor = vscode.window.activeTextEditor;
+                        if (!editor) {
+                            vscode.window.showErrorMessage('No active editor');
+                            return;
+                        }
+                        
+                        documentUri = editor.document.uri;
+                        const position = editor.selection.active;
+                        
+                        // Get the flow document and find task at cursor position
+                        if (documentCache) {
+                            const flowDoc = await documentCache.getDocument(documentUri);
+                            
+                            if (flowDoc) {
+                                // Find task that contains the cursor position
+                                for (const [name, task] of flowDoc.tasks) {
+                                    const taskStartLine = task.location.line - 1;
+                                    const taskEndLine = task.location.endLine ? task.location.endLine - 1 : taskStartLine;
+                                    
+                                    if (position.line >= taskStartLine && position.line <= taskEndLine) {
+                                        taskName = task.name;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (!taskName) {
+                                vscode.window.showErrorMessage('No task found at cursor position. Please place cursor on or within a task declaration.');
+                                return;
+                            }
+                        } else {
+                            vscode.window.showErrorMessage('Document cache not initialized');
+                            return;
+                        }
+                    }
+                    
+                    console.log(`[FlowGraph] Opening flow graph for task from editor: ${taskName}`);
+                    
+                    // Create a unique filename using task name and timestamp
+                    const timestamp = Date.now();
+                    const safeTaskName = taskName.replace(/[^a-zA-Z0-9]/g, '_');
+                    const filename = `${safeTaskName}_${timestamp}.dvg`;
+                    const graphUri = vscode.Uri.parse(`dvflow:/${filename}`);
+                    console.log(`[FlowGraph] Graph URI: ${graphUri.toString()}`);
+                    
+                    // Determine working directory - use the directory containing the document
+                    let workingDir = rootPath;
+                    if (documentUri) {
+                        // Use the directory containing the flow file
+                        workingDir = path.dirname(documentUri.fsPath);
+                    }
+                    
+                    // Try to get graph using dfm
+                    const command = await getDfmCommand(workingDir, `graph --json "${taskName}"`);
+                    console.log(`[FlowGraph] Command: ${command}`);
+                    console.log(`[FlowGraph] Working directory: ${workingDir}`);
+                    
+                    const dotContent = await new Promise<string>((resolve, reject) => {
+                        child_process.exec(command, { cwd: workingDir }, (error: Error | null, stdout: string, stderr: string) => {
+                            if (error) {
+                                console.error(`[FlowGraph] Command error: ${error.message}`);
+                                reject(error);
+                                return;
+                            }
+                            if (stderr) {
+                                console.warn(`[FlowGraph] Command stderr: ${stderr}`);
+                            }
+                            console.log(`[FlowGraph] Command stdout length: ${stdout.length}`);
+                            
+                            // Extract DOT content from JSON wrapper using markers
+                            const beginMarker = '<<<DFM_GRAPH_BEGIN>>>';
+                            const endMarker = '<<<DFM_GRAPH_END>>>';
+                            const beginIdx = stdout.indexOf(beginMarker);
+                            const endIdx = stdout.indexOf(endMarker);
+                            
+                            if (beginIdx !== -1 && endIdx !== -1) {
+                                const jsonStr = stdout.substring(beginIdx + beginMarker.length, endIdx).trim();
+                                try {
+                                    const parsed = JSON.parse(jsonStr);
+                                    console.log(`[FlowGraph] Successfully extracted DOT content from JSON`);
+                                    resolve(parsed.graph);
+                                } catch (parseError) {
+                                    console.error(`[FlowGraph] Failed to parse JSON: ${parseError}`);
+                                    reject(new Error(`Failed to parse graph JSON output: ${parseError}`));
+                                }
+                            } else {
+                                // Fallback: try to use raw output (for backwards compatibility)
+                                console.warn(`[FlowGraph] Markers not found, using raw output`);
+                                console.log(`[FlowGraph] DOT content preview: ${stdout.substring(0, 200)}`);
+                                resolve(stdout);
+                            }
+                        });
+                    });
+
+                    console.log(`[FlowGraph] DOT content length: ${dotContent.length}`);
+                    console.log(`[FlowGraph] ============ TRANSFORMING GRAPH LABELS ============`);
+                    
+                    // Transform DOT content to replace node IDs with task names in edge labels
+                    const transformedDotContent = transformDotGraphLabels(dotContent);
+                    console.log(`[FlowGraph] Transformed DOT content length: ${transformedDotContent.length}`);
+                    console.log(`[FlowGraph] ============================================`);
+                    
+                    // Write the DOT content to the virtual file
+                    if (flowFileSystem) {
+                        flowFileSystem.writeFile(graphUri, Buffer.from(transformedDotContent), { create: true, overwrite: true });
+                        console.log(`[FlowGraph] Written content to virtual file`);
+                        
+                        // Open the file with the custom flow graph editor
+                        await vscode.commands.executeCommand('vscode.openWith', graphUri, 'dvFlow.graphView', {
+                            preview: false,
+                            viewColumn: vscode.ViewColumn.Beside
+                        });
+                        console.log(`[FlowGraph] Panel opened`);
+                    } else {
+                        console.error(`[FlowGraph] flowFileSystem is not initialized!`);
+                    }
+                } catch (error) {
+                    console.error(`[FlowGraph] Error: ${error instanceof Error ? error.message : String(error)}`);
+                    vscode.window.showErrorMessage(`Failed to open flow graph: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+        );
 
         // Register open task command
         let openTaskDisposable = vscode.commands.registerCommand('vscode-dv-flow.openTask', async (srcinfo: string) => {
@@ -567,6 +827,7 @@ export async function activate(context: vscode.ExtensionContext) {
             refreshDisposable, 
             openTaskDisposable, 
             openFlowGraphDisposable,
+            openFlowGraphFromEditorDisposable,
             goToImportDeclarationDisposable,
             openImportDisposable
         );
