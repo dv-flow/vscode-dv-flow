@@ -34,69 +34,625 @@
   <section id="dv-flow-vscode-extension">
 <h1><a class="toc-backref" href="#id1" role="doc-backlink">DV Flow VSCode Extension</a><a class="headerlink" href="#dv-flow-vscode-extension" title="Link to this heading">¶</a></h1>
 <p>DV Flow provides an extension for the <a class="reference external" href="https://code.visualstudio.com/">VSCode</a> development
-environment to assist in developing and using DV Flow descriptions.</p>
+environment to assist in developing and using DV Flow descriptions. The extension provides rich
+language support, visual task graph exploration, real-time execution monitoring, and integrated
+debugging capabilities for DV Flow workflows.</p>
 <nav class="contents" id="contents">
 <p class="topic-title">Contents</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="#dv-flow-vscode-extension" id="id1">DV Flow VSCode Extension</a></p>
 <ul>
-<li><p><a class="reference internal" href="#installing" id="id2">Installing</a></p></li>
-<li><p><a class="reference internal" href="#configuring" id="id3">Configuring</a></p></li>
-<li><p><a class="reference internal" href="#features" id="id4">Features</a></p></li>
+<li><p><a class="reference internal" href="#installation" id="id2">Installation</a></p>
+<ul>
+<li><p><a class="reference internal" href="#requirements" id="id3">Requirements</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#configuration" id="id4">Configuration</a></p>
+<ul>
+<li><p><a class="reference internal" href="#dfm-executable-path" id="id5">DFM Executable Path</a></p></li>
+<li><p><a class="reference internal" href="#workspace-discovery" id="id6">Workspace Discovery</a></p></li>
+<li><p><a class="reference internal" href="#execution-settings" id="id7">Execution Settings</a></p></li>
+<li><p><a class="reference internal" href="#ui-settings" id="id8">UI Settings</a></p></li>
+<li><p><a class="reference internal" href="#debug-settings" id="id9">Debug Settings</a></p></li>
+<li><p><a class="reference internal" href="#perfetto-trace-viewer-settings" id="id10">Perfetto Trace Viewer Settings</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#features" id="id11">Features</a></p>
+<ul>
+<li><p><a class="reference internal" href="#multi-root-workspace-explorer" id="id12">Multi-Root Workspace Explorer</a></p></li>
+<li><p><a class="reference internal" href="#task-graph-visualization" id="id13">Task Graph Visualization</a></p></li>
+<li><p><a class="reference internal" href="#language-support" id="id14">Language Support</a></p></li>
+<li><p><a class="reference internal" href="#task-execution" id="id15">Task Execution</a></p></li>
+<li><p><a class="reference internal" href="#debugging-support" id="id16">Debugging Support</a></p></li>
+<li><p><a class="reference internal" href="#perfetto-trace-viewer" id="id17">Perfetto Trace Viewer</a></p></li>
+<li><p><a class="reference internal" href="#terminal-integration" id="id18">Terminal Integration</a></p></li>
+<li><p><a class="reference internal" href="#editor-features" id="id19">Editor Features</a></p></li>
+<li><p><a class="reference internal" href="#context-menus" id="id20">Context Menus</a></p></li>
+<li><p><a class="reference internal" href="#keyboard-shortcuts" id="id21">Keyboard Shortcuts</a></p></li>
+<li><p><a class="reference internal" href="#command-palette-commands" id="id22">Command Palette Commands</a></p></li>
+<li><p><a class="reference internal" href="#status-bar-integration" id="id23">Status Bar Integration</a></p></li>
+<li><p><a class="reference internal" href="#output-channel" id="id24">Output Channel</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#workflows-and-best-practices" id="id25">Workflows and Best Practices</a></p>
+<ul>
+<li><p><a class="reference internal" href="#multi-package-workspace-setup" id="id26">Multi-Package Workspace Setup</a></p></li>
+<li><p><a class="reference internal" href="#task-development-workflow" id="id27">Task Development Workflow</a></p></li>
+<li><p><a class="reference internal" href="#debugging-task-execution" id="id28">Debugging Task Execution</a></p></li>
+<li><p><a class="reference internal" href="#performance-analysis" id="id29">Performance Analysis</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#troubleshooting" id="id30">Troubleshooting</a></p>
+<ul>
+<li><p><a class="reference internal" href="#dfm-not-found" id="id31">DFM Not Found</a></p></li>
+<li><p><a class="reference internal" href="#no-tasks-showing-in-workspace-view" id="id32">No Tasks Showing in Workspace View</a></p></li>
+<li><p><a class="reference internal" href="#graph-view-not-loading" id="id33">Graph View Not Loading</a></p></li>
+<li><p><a class="reference internal" href="#trace-viewer-not-working" id="id34">Trace Viewer Not Working</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#extension-dependencies" id="id35">Extension Dependencies</a></p></li>
+<li><p><a class="reference internal" href="#additional-resources" id="id36">Additional Resources</a></p></li>
 </ul>
 </li>
 </ul>
 </nav>
-<section id="installing">
-<h2><a class="toc-backref" href="#id2" role="doc-backlink">Installing</a><a class="headerlink" href="#installing" title="Link to this heading">¶</a></h2>
+<section id="installation">
+<h2><a class="toc-backref" href="#id2" role="doc-backlink">Installation</a><a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
 <p>The extension can be installed from the <a class="reference external" href="https://marketplace.visualstudio.com/items?itemName=matthew-ballance.vscode-dv-flow">VSCode Marketplace</a>.</p>
+<section id="requirements">
+<h3><a class="toc-backref" href="#id3" role="doc-backlink">Requirements</a><a class="headerlink" href="#requirements" title="Link to this heading">¶</a></h3>
+<p>The DV Flow extension requires the <a class="reference external" href="https://dv-flow.github.io/dv-flow-mgr">DV Flow Manager</a>
+Python package to be installed in a Python environment accessible to VSCode.</p>
 </section>
-<section id="configuring">
-<h2><a class="toc-backref" href="#id3" role="doc-backlink">Configuring</a><a class="headerlink" href="#configuring" title="Link to this heading">¶</a></h2>
-<p>The DV Flow extension uses <a class="reference external" href="https://dv-flow.github.io/dv-flow-mgr">DV Flow Manager</a>
-to obtain much of the data that is displayed. The VSCode extension must be have access
-to a Python interpreter with access to the DV Flow Manager package.</p>
-<p>The DV Flow extension searches for the appropriate interpreter as follows:</p>
-<ul class="simple">
-<li><p>Checks the ‘dfmPath’ setting in VSCode settings</p></li>
-<li><p>Checks the <cite>python.defaultInterpreterPath</cite> setting in the workspace settings</p></li>
+</section>
+<section id="configuration">
+<h2><a class="toc-backref" href="#id4" role="doc-backlink">Configuration</a><a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
+<section id="dfm-executable-path">
+<h3><a class="toc-backref" href="#id5" role="doc-backlink">DFM Executable Path</a><a class="headerlink" href="#dfm-executable-path" title="Link to this heading">¶</a></h3>
+<p>The DV Flow extension searches for the DV Flow Manager (dfm) executable as follows:</p>
+<ol class="arabic simple">
+<li><p>Checks the <code class="docutils literal notranslate"><span class="pre">dvflow.dfmPath</span></code> setting in VSCode settings</p></li>
+<li><p>Checks the <code class="docutils literal notranslate"><span class="pre">python.defaultInterpreterPath</span></code> setting in the workspace settings</p></li>
 <li><p>Checks for the existence of an <a class="reference external" href="https://fvutils.github.io/ivpm">IVPM</a> packages directory</p></li>
-<li><p>Checks the PATH for the <cite>python3</cite> executable</p></li>
-</ul>
+<li><p>Checks the PATH for the <code class="docutils literal notranslate"><span class="pre">python3</span></code> executable</p></li>
+</ol>
 <img alt="_images/dfmPath_setting.png" src="_images/dfmPath_setting.png" />
-<p>You can configure the <cite>dfmPath</cite> settings in the VSCode settings. The path is to
-the <cite>dfm</cite> executable.</p>
+<p>You can configure the <code class="docutils literal notranslate"><span class="pre">dfmPath</span></code> setting in VSCode settings. The path should point to
+the <code class="docutils literal notranslate"><span class="pre">dfm</span></code> executable or a Python interpreter with the DV Flow Manager package installed.</p>
+</section>
+<section id="workspace-discovery">
+<h3><a class="toc-backref" href="#id6" role="doc-backlink">Workspace Discovery</a><a class="headerlink" href="#workspace-discovery" title="Link to this heading">¶</a></h3>
+<p>The extension automatically discovers flow files in your workspace using configurable patterns:</p>
+<dl class="simple">
+<dt><strong>dvflow.discovery.include</strong> (default: <code class="docutils literal notranslate"><span class="pre">**/flow.dv</span></code>, <code class="docutils literal notranslate"><span class="pre">**/flow.yaml</span></code>, <code class="docutils literal notranslate"><span class="pre">**/flow.yml</span></code>)</dt><dd><p>Glob patterns to include when discovering flow files</p>
+</dd>
+<dt><strong>dvflow.discovery.exclude</strong> (default: <code class="docutils literal notranslate"><span class="pre">**/node_modules/**</span></code>, <code class="docutils literal notranslate"><span class="pre">**/build/**</span></code>, <code class="docutils literal notranslate"><span class="pre">**/rundir/**</span></code>, <code class="docutils literal notranslate"><span class="pre">**/.git/**</span></code>)</dt><dd><p>Glob patterns to exclude when discovering flow files</p>
+</dd>
+<dt><strong>dvflow.discovery.roots</strong> (default: empty)</dt><dd><p>Explicit glob patterns for standalone root packages. If empty, roots are auto-detected</p>
+</dd>
+<dt><strong>dvflow.discovery.importedOnly</strong> (default: empty)</dt><dd><p>Glob patterns for packages that should only be shown as imports, not as roots</p>
+</dd>
+</dl>
+</section>
+<section id="execution-settings">
+<h3><a class="toc-backref" href="#id7" role="doc-backlink">Execution Settings</a><a class="headerlink" href="#execution-settings" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><strong>dvflow.execution.rundirBase</strong> (default: <code class="docutils literal notranslate"><span class="pre">rundir</span></code>)</dt><dd><p>Base directory for run directories, relative to workspace root</p>
+</dd>
+<dt><strong>dvflow.execution.isolateRoots</strong> (default: <code class="docutils literal notranslate"><span class="pre">true</span></code>)</dt><dd><p>Create separate rundirs for each root package</p>
+</dd>
+</dl>
+</section>
+<section id="ui-settings">
+<h3><a class="toc-backref" href="#id8" role="doc-backlink">UI Settings</a><a class="headerlink" href="#ui-settings" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><strong>dvflow.ui.showRootInStatusBar</strong> (default: <code class="docutils literal notranslate"><span class="pre">true</span></code>)</dt><dd><p>Show the active root package in the status bar</p>
+</dd>
+</dl>
+</section>
+<section id="debug-settings">
+<h3><a class="toc-backref" href="#id9" role="doc-backlink">Debug Settings</a><a class="headerlink" href="#debug-settings" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><strong>dvflow.debug.logDfmDiscovery</strong> (default: <code class="docutils literal notranslate"><span class="pre">false</span></code>)</dt><dd><p>Log dfm executable discovery process to the output channel</p>
+</dd>
+</dl>
+</section>
+<section id="perfetto-trace-viewer-settings">
+<h3><a class="toc-backref" href="#id10" role="doc-backlink">Perfetto Trace Viewer Settings</a><a class="headerlink" href="#perfetto-trace-viewer-settings" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><strong>dvflow.perfetto.url</strong> (default: <code class="docutils literal notranslate"><span class="pre">https://ui.perfetto.dev</span></code>)</dt><dd><p>URL for the Perfetto UI. Use this to point to a self-hosted Perfetto instance for offline use.</p>
+</dd>
+<dt><strong>dvflow.perfetto.useLocalBundle</strong> (default: <code class="docutils literal notranslate"><span class="pre">false</span></code>)</dt><dd><p>Use bundled Perfetto UI files instead of the online version</p>
+</dd>
+</dl>
+</section>
 </section>
 <section id="features">
-<h2><a class="toc-backref" href="#id4" role="doc-backlink">Features</a><a class="headerlink" href="#features" title="Link to this heading">¶</a></h2>
-<section id="workspace-view">
-<h3>Workspace View<a class="headerlink" href="#workspace-view" title="Link to this heading">¶</a></h3>
-<p>The DV Flow extension contributes a workspace outline view. This
-view shows information about the tasks defined in the workspace
-package.</p>
+<h2><a class="toc-backref" href="#id11" role="doc-backlink">Features</a><a class="headerlink" href="#features" title="Link to this heading">¶</a></h2>
+<section id="multi-root-workspace-explorer">
+<h3><a class="toc-backref" href="#id12" role="doc-backlink">Multi-Root Workspace Explorer</a><a class="headerlink" href="#multi-root-workspace-explorer" title="Link to this heading">¶</a></h3>
+<p>The DV Flow extension provides a comprehensive workspace explorer that displays all flow packages
+in your workspace, organized by standalone roots and imported packages.</p>
 <img alt="_images/dv_flow_workspace_view.png" src="_images/dv_flow_workspace_view.png" />
-<p>This view is always active, and can be manually-refreshed via <cite>refresh</cite> button.</p>
-<p>Single-clicking (selecting) an entry in the <cite>tasks</cite> collection will
-open an editor on the task’s declaration.</p>
+<p>The workspace view shows:</p>
+<ul class="simple">
+<li><p><strong>Flow Roots</strong> - Standalone packages that can be executed directly</p></li>
+<li><p><strong>Imported Packages</strong> - Packages imported by root packages</p></li>
+<li><p><strong>Active Root</strong> - The currently selected root for task execution (marked with ← ACTIVE)</p></li>
+</ul>
+<p>Each package node expands to show:</p>
+<ul class="simple">
+<li><p><strong>Parameters</strong> - Package-level parameters with their types and default values</p></li>
+<li><p><strong>Imports</strong> - Both local and plugin imports with navigation support</p></li>
+<li><p><strong>Tasks</strong> - All tasks organized by type (FileSet, Exec, Message, etc.)</p></li>
+<li><p><strong>Types</strong> - Custom type definitions</p></li>
+<li><p><strong>Files</strong> - Source files in the package</p></li>
+</ul>
+<section id="root-selection">
+<h4>Root Selection<a class="headerlink" href="#root-selection" title="Link to this heading">¶</a></h4>
+<p>Multiple flow roots can coexist in a workspace. To switch the active root:</p>
+<ul class="simple">
+<li><p>Click the package icon in the status bar, or</p></li>
+<li><p>Use the <strong>DV Flow: Select Active Root</strong> command (<code class="docutils literal notranslate"><span class="pre">Ctrl+Shift+R</span></code> / <code class="docutils literal notranslate"><span class="pre">Cmd+Shift+R</span></code>), or</p></li>
+<li><p>Right-click a root in the workspace view and select <strong>Set as Active Root</strong></p></li>
+</ul>
+<p>The active root is used for all task execution and debugging operations.</p>
 </section>
-<section id="static-graph-view">
-<h3>Static Graph View<a class="headerlink" href="#static-graph-view" title="Link to this heading">¶</a></h3>
-<p>A graphical representation of a task’s execution graph can be opened
-from the <cite>task</cite> entries in the workspace view.</p>
+<section id="discovery-and-refresh">
+<h4>Discovery and Refresh<a class="headerlink" href="#discovery-and-refresh" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Click the refresh icon (🔄) in the workspace view title to refresh the package tree</p></li>
+<li><p>Click the search icon (🔍) to re-discover flow roots in the workspace</p></li>
+<li><p>The workspace view automatically updates when flow files are modified</p></li>
+</ul>
+</section>
+</section>
+<section id="task-graph-visualization">
+<h3><a class="toc-backref" href="#id13" role="doc-backlink">Task Graph Visualization</a><a class="headerlink" href="#task-graph-visualization" title="Link to this heading">¶</a></h3>
+<section id="interactive-graph-view">
+<h4>Interactive Graph View<a class="headerlink" href="#interactive-graph-view" title="Link to this heading">¶</a></h4>
+<p>A graphical representation of a task’s execution graph can be opened from multiple locations:</p>
+<ul class="simple">
+<li><p>Right-click a task in the workspace view and select <strong>Open Flow Graph</strong></p></li>
+<li><p>Click the graph icon next to a task in the workspace view</p></li>
+<li><p>Use the CodeLens “Open Graph” link above task declarations in flow files</p></li>
+<li><p>Right-click in a flow.dv editor and select <strong>Open Task Graph View</strong></p></li>
+</ul>
 <img alt="_images/dv_flow_open_graphview.png" src="_images/dv_flow_open_graphview.png" />
-<p>This will open a new tab containing a graphical view of the task graph.</p>
+<p>The graph view displays:</p>
 <img alt="_images/dv_flow_graphview.png" src="_images/dv_flow_graphview.png" />
-<p>Hovering over nodes in the graph will show the value of the task’s parameters.</p>
+<ul class="simple">
+<li><p>Task nodes with color-coding by type</p></li>
+<li><p>Dependency edges showing task execution order</p></li>
+<li><p>Hover tooltips showing parameter values and task details</p></li>
+</ul>
 <img alt="_images/dv_flow_hover_graphview.png" src="_images/dv_flow_hover_graphview.png" />
 </section>
-<section id="flow-dv-editor">
-<h3>flow.dv Editor<a class="headerlink" href="#flow-dv-editor" title="Link to this heading">¶</a></h3>
-<p>A simple YAML text editor is provided for editing flow.dv files. All
-files named <cite>flow.dv</cite> are associated by default. The language <cite>dvflow</cite>
-can be used to associate additional file extensions with the editor.</p>
+<section id="graph-features">
+<h4>Graph Features<a class="headerlink" href="#graph-features" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><strong>Zoom and Pan</strong> - Use mouse wheel to zoom, drag to pan</p></li>
+<li><p><strong>Node Inspection</strong> - Hover over nodes to see task parameters</p></li>
+<li><p><strong>Edge Labels</strong> - Hover over edges to see dependency relationships</p></li>
+<li><p><strong>Auto-Layout</strong> - Graph automatically arranges nodes for optimal visibility</p></li>
+</ul>
+</section>
+</section>
+<section id="language-support">
+<h3><a class="toc-backref" href="#id14" role="doc-backlink">Language Support</a><a class="headerlink" href="#language-support" title="Link to this heading">¶</a></h3>
+<p>The extension provides comprehensive language support for flow.dv and flow.yaml files.</p>
+<section id="syntax-highlighting">
+<h4>Syntax Highlighting<a class="headerlink" href="#syntax-highlighting" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>YAML syntax highlighting with flow-specific token types</p></li>
+<li><p>Semantic highlighting for task names, parameters, and expressions</p></li>
+</ul>
+</section>
+<section id="intellisense-and-code-completion">
+<h4>IntelliSense and Code Completion<a class="headerlink" href="#intellisense-and-code-completion" title="Link to this heading">¶</a></h4>
+<p>The completion provider offers context-aware suggestions for:</p>
+<ul class="simple">
+<li><p><strong>Task Types</strong> - Built-in task types (<code class="docutils literal notranslate"><span class="pre">std.Exec</span></code>, <code class="docutils literal notranslate"><span class="pre">std.FileSet</span></code>, <code class="docutils literal notranslate"><span class="pre">std.Message</span></code>, etc.)</p></li>
+<li><p><strong>Task Parameters</strong> - Parameter names based on the task’s <code class="docutils literal notranslate"><span class="pre">uses:</span></code> type</p></li>
+<li><p><strong>Task References</strong> - Available tasks when completing <code class="docutils literal notranslate"><span class="pre">needs:</span></code> dependencies</p></li>
+<li><p><strong>Expression Variables</strong> - Variables in <code class="docutils literal notranslate"><span class="pre">${{</span> <span class="pre">}}</span></code> expressions</p></li>
+<li><p><strong>Import Names</strong> - Package names when completing import references</p></li>
+</ul>
+<p>Trigger completion with <code class="docutils literal notranslate"><span class="pre">Ctrl+Space</span></code> while editing flow files.</p>
+</section>
+<section id="hover-information">
+<h4>Hover Information<a class="headerlink" href="#hover-information" title="Link to this heading">¶</a></h4>
+<p>Hover over symbols to see:</p>
+<ul class="simple">
+<li><p><strong>Task Definitions</strong> - Task type, description, and parameters</p></li>
+<li><p><strong>Task Types</strong> - Built-in task documentation</p></li>
+<li><p><strong>Parameters</strong> - Parameter types and default values</p></li>
+<li><p><strong>Task References</strong> - Quick preview of referenced tasks</p></li>
+<li><p><strong>Imports</strong> - Import paths and package information</p></li>
+</ul>
+</section>
+<section id="go-to-definition">
+<h4>Go to Definition<a class="headerlink" href="#go-to-definition" title="Link to this heading">¶</a></h4>
+<p>Navigate to definitions with <code class="docutils literal notranslate"><span class="pre">F12</span></code> or <code class="docutils literal notranslate"><span class="pre">Ctrl+Click</span></code>:</p>
+<ul class="simple">
+<li><p>Task names → task declaration</p></li>
+<li><p>Task types → type definition (if available)</p></li>
+<li><p>Import names → imported package file</p></li>
+<li><p>Fragment paths → fragment file</p></li>
+<li><p>Parameter references → parameter declaration</p></li>
+</ul>
+</section>
+<section id="find-all-references">
+<h4>Find All References<a class="headerlink" href="#find-all-references" title="Link to this heading">¶</a></h4>
+<p>Find all references to a symbol with <code class="docutils literal notranslate"><span class="pre">Shift+F12</span></code>:</p>
+<ul class="simple">
+<li><p>Task references in <code class="docutils literal notranslate"><span class="pre">needs:</span></code> dependencies</p></li>
+<li><p>Parameter usage in expressions</p></li>
+<li><p>Import usage across files</p></li>
+</ul>
+</section>
+<section id="rename-refactoring">
+<h4>Rename Refactoring<a class="headerlink" href="#rename-refactoring" title="Link to this heading">¶</a></h4>
+<p>Rename tasks and parameters with <code class="docutils literal notranslate"><span class="pre">F2</span></code>:</p>
+<ul class="simple">
+<li><p>Renames all references across the file</p></li>
+<li><p>Updates task names in <code class="docutils literal notranslate"><span class="pre">needs:</span></code> dependencies</p></li>
+<li><p>Safe refactoring with validation</p></li>
+</ul>
+</section>
+<section id="codelens">
+<h4>CodeLens<a class="headerlink" href="#codelens" title="Link to this heading">¶</a></h4>
+<p>Inline commands appear above task declarations:</p>
+<ul class="simple">
+<li><p><strong>Open Graph</strong> - Opens the task dependency graph</p></li>
+</ul>
+</section>
+<section id="diagnostics">
+<h4>Diagnostics<a class="headerlink" href="#diagnostics" title="Link to this heading">¶</a></h4>
+<p>Real-time error and warning reporting for:</p>
+<ul class="simple">
+<li><p>Duplicate task names</p></li>
+<li><p>Undefined task references in dependencies</p></li>
+<li><p>Missing fragment files</p></li>
+<li><p>Invalid expression syntax</p></li>
+</ul>
+</section>
+</section>
+<section id="task-execution">
+<h3><a class="toc-backref" href="#id15" role="doc-backlink">Task Execution</a><a class="headerlink" href="#task-execution" title="Link to this heading">¶</a></h3>
+<section id="run-panel">
+<h4>Run Panel<a class="headerlink" href="#run-panel" title="Link to this heading">¶</a></h4>
+<p>The Run Panel provides a dedicated interface for task execution with real-time monitoring:</p>
+<ul class="simple">
+<li><p>Open via the DV Flow activity bar icon (circuit board icon)</p></li>
+<li><p>View execution progress with task status indicators</p></li>
+<li><p>Stream command output in real-time</p></li>
+<li><p>Cancel running tasks</p></li>
+<li><p>View execution duration and statistics</p></li>
+<li><p>Access generated Perfetto traces after execution</p></li>
+</ul>
+</section>
+<section id="run-tasks">
+<h4>Run Tasks<a class="headerlink" href="#run-tasks" title="Link to this heading">¶</a></h4>
+<p>Execute tasks using multiple methods:</p>
+<ol class="arabic simple">
+<li><p><strong>From Workspace View</strong>: Right-click a task and select <strong>Run Task</strong></p></li>
+<li><p><strong>From Command Palette</strong>: Use <strong>DV Flow: Run Task</strong> (<code class="docutils literal notranslate"><span class="pre">Ctrl+Shift+T</span></code> / <code class="docutils literal notranslate"><span class="pre">Cmd+Shift+T</span></code>)</p></li>
+<li><p><strong>From Run Panel</strong>: Select task and click Run</p></li>
+<li><p><strong>From Task Details Panel</strong>: Click the Run button</p></li>
+</ol>
+</section>
+<section id="task-details-panel">
+<h4>Task Details Panel<a class="headerlink" href="#task-details-panel" title="Link to this heading">¶</a></h4>
+<p>The Task Details panel shows comprehensive information about selected tasks:</p>
+<ul class="simple">
+<li><p>Source location with click-to-navigate</p></li>
+<li><p>Task type and description</p></li>
+<li><p>Dependencies (needs)</p></li>
+<li><p>Dependents (tasks that need this task)</p></li>
+<li><p>Quick actions (Run, Debug, Open Graph, Open Rundir)</p></li>
+</ul>
+<p>Select a task in the workspace view to populate the Task Details panel.</p>
+</section>
+<section id="vs-code-tasks-integration">
+<h4>VS Code Tasks Integration<a class="headerlink" href="#vs-code-tasks-integration" title="Link to this heading">¶</a></h4>
+<p>DV Flow tasks are integrated with VS Code’s task system:</p>
+<ul class="simple">
+<li><p>Tasks can be discovered and executed through the VS Code Tasks panel</p></li>
+<li><p>Tasks can be bound to keyboard shortcuts</p></li>
+<li><p>Integrate with VS Code’s task execution framework</p></li>
+</ul>
+</section>
+</section>
+<section id="debugging-support">
+<h3><a class="toc-backref" href="#id16" role="doc-backlink">Debugging Support</a><a class="headerlink" href="#debugging-support" title="Link to this heading">¶</a></h3>
+<section id="debug-configuration">
+<h4>Debug Configuration<a class="headerlink" href="#debug-configuration" title="Link to this heading">¶</a></h4>
+<p>The extension provides a DV Flow debugger that allows stepping through task execution:</p>
+<ol class="arabic">
+<li><p>Add a launch configuration in <code class="docutils literal notranslate"><span class="pre">.vscode/launch.json</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;dvflow&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;request&quot;</span><span class="p">:</span> <span class="s2">&quot;launch&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Debug DV Flow Task&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;task&quot;</span><span class="p">:</span> <span class="s2">&quot;${command:dvflow.pickTask}&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</li>
+<li><p>Press <code class="docutils literal notranslate"><span class="pre">F5</span></code> or click the debug icon to start debugging</p></li>
+<li><p>Select the task to debug from the picker</p></li>
+</ol>
+<p>The <code class="docutils literal notranslate"><span class="pre">${command:dvflow.pickTask}</span></code> variable provides a task picker when debugging starts.</p>
+</section>
+<section id="debug-features">
+<h4>Debug Features<a class="headerlink" href="#debug-features" title="Link to this heading">¶</a></h4>
+<p>The DV Flow debugger integrates with VS Code’s debugging system to execute tasks:</p>
+<ul class="simple">
+<li><p>Launch tasks through the debug interface</p></li>
+<li><p>View task output in Debug Console</p></li>
+<li><p>Monitor task execution status</p></li>
+<li><p>Access standard debugging controls (run, stop)</p></li>
+</ul>
+</section>
+</section>
+<section id="perfetto-trace-viewer">
+<h3><a class="toc-backref" href="#id17" role="doc-backlink">Perfetto Trace Viewer</a><a class="headerlink" href="#perfetto-trace-viewer" title="Link to this heading">¶</a></h3>
+<section id="view-execution-traces">
+<h4>View Execution Traces<a class="headerlink" href="#view-execution-traces" title="Link to this heading">¶</a></h4>
+<p>DV Flow can generate Perfetto traces for task execution analysis. The extension provides
+an integrated Perfetto trace viewer:</p>
+<ul class="simple">
+<li><p><strong>Auto-Detection</strong> - Run Panel automatically detects and links to generated traces</p></li>
+<li><p><strong>File Associations</strong> - <code class="docutils literal notranslate"><span class="pre">.perfetto-trace</span></code>, <code class="docutils literal notranslate"><span class="pre">.pftrace</span></code>, <code class="docutils literal notranslate"><span class="pre">.perfetto</span></code> files open in viewer</p></li>
+<li><p><strong>Context Menu</strong> - Right-click trace files and select <strong>Open Trace in Perfetto Viewer</strong></p></li>
+</ul>
+</section>
+<section id="trace-viewer-features">
+<h4>Trace Viewer Features<a class="headerlink" href="#trace-viewer-features" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Full Perfetto UI embedded in VSCode</p></li>
+<li><p>Timeline view of task execution</p></li>
+<li><p>CPU and memory usage visualization</p></li>
+<li><p>Task dependency critical path analysis</p></li>
+<li><p>Export and share traces</p></li>
+<li><p>Offline support with local Perfetto bundle</p></li>
+</ul>
+<p>To enable offline viewing, set <code class="docutils literal notranslate"><span class="pre">dvflow.perfetto.useLocalBundle</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code> and ensure
+Perfetto UI files are available in the extension’s media directory.</p>
+</section>
+</section>
+<section id="terminal-integration">
+<h3><a class="toc-backref" href="#id18" role="doc-backlink">Terminal Integration</a><a class="headerlink" href="#terminal-integration" title="Link to this heading">¶</a></h3>
+<section id="trace-link-detection">
+<h4>Trace Link Detection<a class="headerlink" href="#trace-link-detection" title="Link to this heading">¶</a></h4>
+<p>The extension automatically detects Perfetto trace file paths in terminal output and
+converts them to clickable links that open the trace viewer.</p>
+</section>
+<section id="terminal-output">
+<h4>Terminal Output<a class="headerlink" href="#terminal-output" title="Link to this heading">¶</a></h4>
+<p>When running tasks:</p>
+<ul class="simple">
+<li><p>Task output streams to VSCode terminal</p></li>
+<li><p>ANSI color codes preserved</p></li>
+<li><p>Exit codes and error messages displayed</p></li>
+<li><p>Working directory shown in terminal header</p></li>
+</ul>
+</section>
+</section>
+<section id="editor-features">
+<h3><a class="toc-backref" href="#id19" role="doc-backlink">Editor Features</a><a class="headerlink" href="#editor-features" title="Link to this heading">¶</a></h3>
+<section id="flow-file-editor">
+<h4>Flow File Editor<a class="headerlink" href="#flow-file-editor" title="Link to this heading">¶</a></h4>
+<p>A specialized editor is provided for flow.dv, flow.yaml, and flow.yml files:</p>
+<ul class="simple">
+<li><p>YAML syntax support with flow-specific schema</p></li>
+<li><p>Automatic file associations</p></li>
+<li><p>Bracket matching and auto-indentation</p></li>
+<li><p>Comment toggling (<code class="docutils literal notranslate"><span class="pre">Ctrl+/</span></code>)</p></li>
+<li><p>Format document support</p></li>
+</ul>
+</section>
+<section id="file-association">
+<h4>File Association<a class="headerlink" href="#file-association" title="Link to this heading">¶</a></h4>
+<p>The extension automatically associates:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">flow.dv</span></code> files</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flow.yaml</span></code> files</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flow.yml</span></code> files</p></li>
+</ul>
+<p>Additional file patterns can be associated with the <code class="docutils literal notranslate"><span class="pre">dvflow</span></code> language ID in VSCode settings.</p>
+</section>
+<section id="fragment-support">
+<h4>Fragment Support<a class="headerlink" href="#fragment-support" title="Link to this heading">¶</a></h4>
+<p>The extension supports flow fragments (reusable file includes):</p>
+<ul class="simple">
+<li><p>Navigate to fragment definitions with Go to Definition</p></li>
+<li><p>Hover over fragment paths to see file location</p></li>
+<li><p>Fragment files are distinguished from package files</p></li>
+</ul>
+</section>
+</section>
+<section id="context-menus">
+<h3><a class="toc-backref" href="#id20" role="doc-backlink">Context Menus</a><a class="headerlink" href="#context-menus" title="Link to this heading">¶</a></h3>
+<p>The extension adds context menu items in various locations:</p>
+<dl class="simple">
+<dt><strong>Workspace View</strong></dt><dd><ul class="simple">
+<li><p>Root: Set as Active Root</p></li>
+<li><p>Task: Open Flow Graph, Run Task, Show Task Details</p></li>
+<li><p>Import: Go to Declaration</p></li>
+</ul>
+</dd>
+<dt><strong>Editor</strong></dt><dd><ul class="simple">
+<li><p>Open Task Graph View (in flow files)</p></li>
+</ul>
+</dd>
+<dt><strong>Explorer</strong></dt><dd><ul class="simple">
+<li><p>Open Trace in Perfetto Viewer (on trace files)</p></li>
+</ul>
+</dd>
+</dl>
+</section>
+<section id="keyboard-shortcuts">
+<h3><a class="toc-backref" href="#id21" role="doc-backlink">Keyboard Shortcuts</a><a class="headerlink" href="#keyboard-shortcuts" title="Link to this heading">¶</a></h3>
+<p>Default keyboard shortcuts:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Ctrl+Shift+R</span></code> / <code class="docutils literal notranslate"><span class="pre">Cmd+Shift+R</span></code> - Select Active Root</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Ctrl+Shift+T</span></code> / <code class="docutils literal notranslate"><span class="pre">Cmd+Shift+T</span></code> - Run Task</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">F12</span></code> - Go to Definition</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Shift+F12</span></code> - Find All References</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">F2</span></code> - Rename Symbol</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Ctrl+Space</span></code> - Trigger IntelliSense</p></li>
+</ul>
+</section>
+<section id="command-palette-commands">
+<h3><a class="toc-backref" href="#id22" role="doc-backlink">Command Palette Commands</a><a class="headerlink" href="#command-palette-commands" title="Link to this heading">¶</a></h3>
+<p>All commands are accessible via the Command Palette (<code class="docutils literal notranslate"><span class="pre">Ctrl+Shift+P</span></code> / <code class="docutils literal notranslate"><span class="pre">Cmd+Shift+P</span></code>):</p>
+<ul class="simple">
+<li><p><strong>DV Flow: Pick Task</strong> - Select a task from the active root</p></li>
+<li><p><strong>DV Flow: Run Task</strong> - Run a task</p></li>
+<li><p><strong>DV Flow: Open Flow Graph</strong> - Open task graph for a selected task</p></li>
+<li><p><strong>DV Flow: Open Task Graph View</strong> - Open graph from editor</p></li>
+<li><p><strong>DV Flow: Update DV-Flow Tree</strong> - Update workspace tree</p></li>
+<li><p><strong>DV Flow: Refresh</strong> - Refresh workspace explorer</p></li>
+<li><p><strong>DV Flow: Open Task Source</strong> - Navigate to task declaration</p></li>
+<li><p><strong>DV Flow: Go to Declaration</strong> - Go to import/fragment declaration</p></li>
+<li><p><strong>DV Flow: Select Active Root</strong> - Choose active root package</p></li>
+<li><p><strong>DV Flow: Set as Active Root</strong> - Set selected package as active</p></li>
+<li><p><strong>DV Flow: Discover Flow Roots</strong> - Re-scan workspace for flow files</p></li>
+<li><p><strong>DV Flow: Show Task Details</strong> - Open task details panel</p></li>
+<li><p><strong>DV Flow: Show Run Panel</strong> - Open run panel</p></li>
+<li><p><strong>DV Flow: Test DFM Discovery</strong> - Debug dfm executable discovery</p></li>
+<li><p><strong>DV Flow: Show Discovery Log</strong> - View dfm discovery diagnostic log</p></li>
+<li><p><strong>DV Flow: Open Trace in Perfetto Viewer</strong> - Open Perfetto trace file</p></li>
+</ul>
+</section>
+<section id="status-bar-integration">
+<h3><a class="toc-backref" href="#id23" role="doc-backlink">Status Bar Integration</a><a class="headerlink" href="#status-bar-integration" title="Link to this heading">¶</a></h3>
+<p>The extension adds information to the VSCode status bar:</p>
+<ul>
+<li><p><strong>Active Root Indicator</strong> - Shows currently selected root package (when <code class="docutils literal notranslate"><span class="pre">dvflow.ui.showRootInStatusBar</span></code> is enabled)</p>
+<p>Click the indicator to quickly switch between roots.</p>
+</li>
+</ul>
+</section>
+<section id="output-channel">
+<h3><a class="toc-backref" href="#id24" role="doc-backlink">Output Channel</a><a class="headerlink" href="#output-channel" title="Link to this heading">¶</a></h3>
+<p>The extension provides a dedicated output channel (<strong>DV Flow</strong>) for diagnostic information:</p>
+<ul class="simple">
+<li><p>DFM discovery process (when <code class="docutils literal notranslate"><span class="pre">dvflow.debug.logDfmDiscovery</span></code> is enabled)</p></li>
+<li><p>Task execution output</p></li>
+<li><p>Error messages and warnings</p></li>
+<li><p>Extension activation logs</p></li>
+</ul>
+<p>Access via <strong>View &gt; Output</strong> and select “DV Flow” from the dropdown.</p>
+</section>
+</section>
+<section id="workflows-and-best-practices">
+<h2><a class="toc-backref" href="#id25" role="doc-backlink">Workflows and Best Practices</a><a class="headerlink" href="#workflows-and-best-practices" title="Link to this heading">¶</a></h2>
+<section id="multi-package-workspace-setup">
+<h3><a class="toc-backref" href="#id26" role="doc-backlink">Multi-Package Workspace Setup</a><a class="headerlink" href="#multi-package-workspace-setup" title="Link to this heading">¶</a></h3>
+<p>For workspaces with multiple flow packages:</p>
+<ol class="arabic simple">
+<li><p>Organize each package in its own directory</p></li>
+<li><p>Use the workspace explorer to visualize package relationships</p></li>
+<li><p>Set explicit root patterns in <code class="docutils literal notranslate"><span class="pre">dvflow.discovery.roots</span></code> if needed</p></li>
+<li><p>Mark utility packages as import-only using <code class="docutils literal notranslate"><span class="pre">dvflow.discovery.importedOnly</span></code></p></li>
+</ol>
+</section>
+<section id="task-development-workflow">
+<h3><a class="toc-backref" href="#id27" role="doc-backlink">Task Development Workflow</a><a class="headerlink" href="#task-development-workflow" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Create or edit flow.dv file with language support</p></li>
+<li><p>Use IntelliSense for task type and parameter suggestions</p></li>
+<li><p>View task graph to validate dependencies</p></li>
+<li><p>Run task from workspace view or Run Panel</p></li>
+<li><p>View execution results and traces</p></li>
+<li><p>Iterate based on diagnostics and output</p></li>
+</ol>
+</section>
+<section id="debugging-task-execution">
+<h3><a class="toc-backref" href="#id28" role="doc-backlink">Debugging Task Execution</a><a class="headerlink" href="#debugging-task-execution" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Add a DV Flow debug configuration</p></li>
+<li><p>Set breakpoints in Python task implementations</p></li>
+<li><p>Start debugging with F5</p></li>
+<li><p>Step through execution to diagnose issues</p></li>
+<li><p>Inspect variables and task state</p></li>
+<li><p>Review trace files for performance analysis</p></li>
+</ol>
+</section>
+<section id="performance-analysis">
+<h3><a class="toc-backref" href="#id29" role="doc-backlink">Performance Analysis</a><a class="headerlink" href="#performance-analysis" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Run tasks with trace generation enabled</p></li>
+<li><p>Open generated .perfetto-trace files from Run Panel</p></li>
+<li><p>Analyze task execution timeline</p></li>
+<li><p>Identify bottlenecks and parallelization opportunities</p></li>
+<li><p>Review critical path and task dependencies</p></li>
+</ol>
+</section>
+</section>
+<section id="troubleshooting">
+<h2><a class="toc-backref" href="#id30" role="doc-backlink">Troubleshooting</a><a class="headerlink" href="#troubleshooting" title="Link to this heading">¶</a></h2>
+<section id="dfm-not-found">
+<h3><a class="toc-backref" href="#id31" role="doc-backlink">DFM Not Found</a><a class="headerlink" href="#dfm-not-found" title="Link to this heading">¶</a></h3>
+<p>If the extension cannot find the DV Flow Manager:</p>
+<ol class="arabic simple">
+<li><p>Check that <code class="docutils literal notranslate"><span class="pre">dfm</span></code> or Python with DV Flow Manager is installed</p></li>
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">dvflow.dfmPath</span></code> to the correct executable path</p></li>
+<li><p>Enable <code class="docutils literal notranslate"><span class="pre">dvflow.debug.logDfmDiscovery</span></code> to see search process</p></li>
+<li><p>Run <strong>DV Flow: Test DFM Discovery</strong> command</p></li>
+<li><p>Check the DV Flow output channel for errors</p></li>
+</ol>
+</section>
+<section id="no-tasks-showing-in-workspace-view">
+<h3><a class="toc-backref" href="#id32" role="doc-backlink">No Tasks Showing in Workspace View</a><a class="headerlink" href="#no-tasks-showing-in-workspace-view" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Ensure flow.dv/flow.yaml files have valid syntax</p></li>
+<li><p>Click the refresh button in workspace view</p></li>
+<li><p>Run <strong>DV Flow: Discover Flow Roots</strong> command</p></li>
+<li><p>Check that files aren’t excluded by <code class="docutils literal notranslate"><span class="pre">dvflow.discovery.exclude</span></code> patterns</p></li>
+<li><p>Verify files contain <code class="docutils literal notranslate"><span class="pre">package:</span></code> key (not just <code class="docutils literal notranslate"><span class="pre">fragment:</span></code>)</p></li>
+</ol>
+</section>
+<section id="graph-view-not-loading">
+<h3><a class="toc-backref" href="#id33" role="doc-backlink">Graph View Not Loading</a><a class="headerlink" href="#graph-view-not-loading" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Check that the task has valid dependencies</p></li>
+<li><p>Verify DFM is properly configured</p></li>
+<li><p>Check the Developer Tools console (Help &gt; Toggle Developer Tools)</p></li>
+<li><p>Look for errors in the DV Flow output channel</p></li>
+</ol>
+</section>
+<section id="trace-viewer-not-working">
+<h3><a class="toc-backref" href="#id34" role="doc-backlink">Trace Viewer Not Working</a><a class="headerlink" href="#trace-viewer-not-working" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Verify trace file is valid Perfetto format</p></li>
+<li><p>Check <code class="docutils literal notranslate"><span class="pre">dvflow.perfetto.url</span></code> setting</p></li>
+<li><p>If offline, ensure <code class="docutils literal notranslate"><span class="pre">dvflow.perfetto.useLocalBundle</span></code> is enabled</p></li>
+<li><p>Check browser console in webview (see Developer Tools)</p></li>
+</ol>
+</section>
+</section>
+<section id="extension-dependencies">
+<h2><a class="toc-backref" href="#id35" role="doc-backlink">Extension Dependencies</a><a class="headerlink" href="#extension-dependencies" title="Link to this heading">¶</a></h2>
+<p>The extension depends on:</p>
+<ul class="simple">
+<li><p><strong>redhat.vscode-yaml</strong> - YAML language support</p></li>
+</ul>
+<p>This dependency is automatically installed when the DV Flow extension is installed.</p>
+</section>
+<section id="additional-resources">
+<h2><a class="toc-backref" href="#id36" role="doc-backlink">Additional Resources</a><a class="headerlink" href="#additional-resources" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://dv-flow.github.io">DV Flow Documentation</a></p></li>
+<li><p><a class="reference external" href="https://dv-flow.github.io/dv-flow-mgr">DV Flow Manager Documentation</a></p></li>
+<li><p><a class="reference external" href="https://github.com/dv-flow/vscode-dv-flow">GitHub Repository</a></p></li>
+<li><p><a class="reference external" href="https://github.com/dv-flow/vscode-dv-flow/issues">Issue Tracker</a></p></li>
+</ul>
 <div class="toctree-wrapper compound">
 </div>
-</section>
 </section>
 </section>
 
