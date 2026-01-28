@@ -2,7 +2,7 @@
   "name": "vscode-dv-flow",
   "displayName": "vscode-dv-flow",
   "description": "VSCode support for the dv-flow build tool",
-  "version": "0.0.8",
+  "version": "0.1.0",
   "publisher": "matthew-ballance",
   "engines": {
     "vscode": "^1.98.0"
@@ -18,7 +18,9 @@
     "onCommand:vscode-dv-flow.refreshTree",
     "onCommand:vscode-dv-flow.openTask",
     "onCommand:vscode-dv-flow.runTask",
+    "onCommand:vscode-dv-flow.openTrace",
     "onCommand:dvflow.pickTask",
+    "onCustomEditor:dvflow.perfettoEditor",
     "onDebug",
     "workspaceContains:flow.dv"
   ],
@@ -68,6 +70,20 @@
         }
       }
     ],
+    "keybindings": [
+      {
+        "command": "vscode-dv-flow.selectActiveRoot",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "workspaceHasFlow"
+      },
+      {
+        "command": "vscode-dv-flow.runTask",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "workspaceHasFlow"
+      }
+    ],
     "commands": [
       {
         "command": "dvflow.pickTask",
@@ -77,28 +93,89 @@
       {
         "command": "vscode-dv-flow.runTask",
         "title": "Run Task",
-        "category": "DV Flow"
+        "category": "DV Flow",
+        "icon": "$(play)"
       },
       {
         "command": "vscode-dv-flow.openFlowGraph",
-        "title": "Open Flow Graph"
+        "title": "Open Flow Graph",
+        "category": "DV Flow",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "vscode-dv-flow.openFlowGraphFromEditor",
+        "title": "Open Task Graph View",
+        "category": "DV Flow",
+        "icon": "$(type-hierarchy)"
       },
       {
         "command": "vscode-dv-flow.updateTree",
-        "title": "Update DV-Flow Tree"
+        "title": "Update DV-Flow Tree",
+        "category": "DV Flow"
       },
       {
         "command": "vscode-dv-flow.refreshTree",
         "title": "Refresh",
+        "category": "DV Flow",
         "icon": "$(refresh)"
       },
       {
         "command": "vscode-dv-flow.openTask",
-        "title": "Open Task Source"
+        "title": "Open Task Source",
+        "category": "DV Flow"
       },
       {
         "command": "vscode-dv-flow.goToImportDeclaration",
-        "title": "Go to Declaration"
+        "title": "Go to Declaration",
+        "category": "DV Flow"
+      },
+      {
+        "command": "vscode-dv-flow.selectActiveRoot",
+        "title": "Select Active Root",
+        "category": "DV Flow",
+        "icon": "$(package)"
+      },
+      {
+        "command": "vscode-dv-flow.setActiveRoot",
+        "title": "Set as Active Root",
+        "category": "DV Flow",
+        "icon": "$(check)"
+      },
+      {
+        "command": "vscode-dv-flow.discoverRoots",
+        "title": "Discover Flow Roots",
+        "category": "DV Flow",
+        "icon": "$(search)"
+      },
+      {
+        "command": "vscode-dv-flow.showTaskDetails",
+        "title": "Show Task Details",
+        "category": "DV Flow",
+        "icon": "$(info)"
+      },
+      {
+        "command": "vscode-dv-flow.showRunPanel",
+        "title": "Show Run Panel",
+        "category": "DV Flow",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vscode-dv-flow.testDfmDiscovery",
+        "title": "Test DFM Discovery",
+        "category": "DV Flow",
+        "icon": "$(search)"
+      },
+      {
+        "command": "vscode-dv-flow.showDiscoveryLog",
+        "title": "Show Discovery Log",
+        "category": "DV Flow",
+        "icon": "$(output)"
+      },
+      {
+        "command": "vscode-dv-flow.openTrace",
+        "title": "Open Trace in Perfetto Viewer",
+        "category": "DV Flow",
+        "icon": "$(graph)"
       }
     ],
     "viewsContainers": {
@@ -118,12 +195,36 @@
           "icon": "$(circuit-board)",
           "contextualTitle": "DV Flow"
         }
+      ],
+      "dv-flow-explorer": [
+        {
+          "type": "webview",
+          "id": "dvflow.runPanel",
+          "name": "Run",
+          "icon": "$(play)",
+          "contextualTitle": "Run Tasks"
+        },
+        {
+          "type": "webview",
+          "id": "dvflow.taskDetails",
+          "name": "Task Details",
+          "icon": "$(info)",
+          "contextualTitle": "Task Details"
+        }
       ]
     },
     "menus": {
       "commandPalette": [
         {
           "command": "vscode-dv-flow.runTask",
+          "when": "workspaceHasFlow"
+        },
+        {
+          "command": "vscode-dv-flow.selectActiveRoot",
+          "when": "workspaceHasFlow"
+        },
+        {
+          "command": "vscode-dv-flow.discoverRoots",
           "when": "workspaceHasFlow"
         }
       ],
@@ -132,22 +233,56 @@
           "command": "vscode-dv-flow.refreshTree",
           "when": "view == dvFlowWorkspace",
           "group": "navigation"
+        },
+        {
+          "command": "vscode-dv-flow.discoverRoots",
+          "when": "view == dvFlowWorkspace",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
+          "command": "vscode-dv-flow.setActiveRoot",
+          "when": "view == dvFlowWorkspace && viewItem == root",
+          "group": "1_root@1"
+        },
+        {
           "command": "vscode-dv-flow.openFlowGraph",
           "when": "view == dvFlowWorkspace && viewItem == task",
-          "group": "navigation"
+          "group": "1_task@1"
         },
         {
           "command": "vscode-dv-flow.runTask",
           "when": "view == dvFlowWorkspace && viewItem == task",
-          "group": "navigation"
+          "group": "1_task@2"
+        },
+        {
+          "command": "vscode-dv-flow.showTaskDetails",
+          "when": "view == dvFlowWorkspace && viewItem == task",
+          "group": "1_task@3"
         },
         {
           "command": "vscode-dv-flow.goToImportDeclaration",
           "when": "view == dvFlowWorkspace && viewItem == import",
+          "group": "navigation"
+        },
+        {
+          "command": "vscode-dv-flow.goToImportDeclaration",
+          "when": "view == dvFlowWorkspace && viewItem == localImport",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vscode-dv-flow.openFlowGraphFromEditor",
+          "when": "resourceLangId == dvflow || resourceFilename =~ /flow\\.(yaml|yml|dv)$/",
+          "group": "navigation@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "vscode-dv-flow.openTrace",
+          "when": "resourceExtname == .perfetto-trace || resourceExtname == .pftrace || resourceExtname == .perfetto || resourceExtname == .trace || resourceExtname == .systrace",
           "group": "navigation"
         }
       ]
@@ -159,6 +294,28 @@
         "selector": [
           {
             "filenamePattern": "*.dvg"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "dvflow.perfettoEditor",
+        "displayName": "Perfetto Trace Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.perfetto-trace"
+          },
+          {
+            "filenamePattern": "*.pftrace"
+          },
+          {
+            "filenamePattern": "*.perfetto"
+          },
+          {
+            "filenamePattern": "trace.perfetto"
+          },
+          {
+            "filenamePattern": "**/rundir/**/*.trace"
           }
         ],
         "priority": "default"
@@ -199,6 +356,82 @@
           "type": "string",
           "default": "",
           "description": "Path to the DV Flow Manager (dfm) executable"
+        },
+        "dvflow.discovery.include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/flow.dv",
+            "**/flow.yaml",
+            "**/flow.yml"
+          ],
+          "description": "Glob patterns to include when discovering flow files"
+        },
+        "dvflow.discovery.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/build/**",
+            "**/rundir/**",
+            "**/.git/**"
+          ],
+          "description": "Glob patterns to exclude when discovering flow files"
+        },
+        "dvflow.discovery.roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Explicit glob patterns for standalone root packages (if empty, auto-detected)"
+        },
+        "dvflow.discovery.importedOnly": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Glob patterns for packages that should only be shown as imports, not as roots"
+        },
+        "dvflow.execution.rundirBase": {
+          "type": "string",
+          "default": "rundir",
+          "description": "Base directory for run directories (relative to workspace root)"
+        },
+        "dvflow.execution.isolateRoots": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create separate rundirs for each root package"
+        },
+        "dvflow.ui.showRootInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the active root package in the status bar"
+        },
+        "dvflow.debug.logDfmDiscovery": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log dfm executable discovery process to the output channel"
+        },
+        "dvflow.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Python interpreter to use for dfm (if dfmPath is not set)"
+        },
+        "dvflow.perfetto.url": {
+          "type": "string",
+          "default": "https://ui.perfetto.dev",
+          "description": "URL for the Perfetto UI. Use this to point to a self-hosted Perfetto instance for offline use."
+        },
+        "dvflow.perfetto.useLocalBundle": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use bundled Perfetto UI files instead of the online version (requires Perfetto files in extension's media/perfetto directory)"
         }
       }
     }
@@ -212,17 +445,26 @@
     "test": "vscode-test"
   },
   "dependencies": {
-    "d3-graphviz": "^4.0.0"
+    "d3-graphviz": "^4.0.0",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/dagre": "^0.7.53",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.98.0",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
+    "d3": "^7.9.0",
+    "dagre": "^0.8.5",
     "eslint": "^9.21.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "typescript": "^5.7.3"
   },
   "extensionDependencies": [

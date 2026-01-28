@@ -56,7 +56,7 @@ export class DVFlowDebugConfigProvider implements vscode.DebugConfigurationProvi
         }
 
         try {
-            const pythonPath = await findPythonInterpreter(folder.uri.fsPath);
+            const pythonPath = await findPythonInterpreter();
             config.pythonPath = pythonPath;
             config.cwd = folder.uri.fsPath;
             return config;

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "tests": [
+    {
+      "label": "Unit Tests",
+      "files": "out/test/**/*.test.js",
+      "mocha": {
+        "timeout": 20000
+      }
+    }
+  ]
+}
