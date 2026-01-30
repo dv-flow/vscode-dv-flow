@@ -145,7 +145,7 @@ export async function findPythonInterpreter(): Promise<string> {
  * 
  * @returns Promise<string> - The dfm executable path (or python -m command)
  */
-async function discoverDfm(): Promise<string> {
+export async function discoverDfm(): Promise<string> {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) {
         throw new Error('No workspace folder open');

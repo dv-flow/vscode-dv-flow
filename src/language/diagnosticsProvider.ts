@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import { FlowDocumentCache, FlowDocument } from './flowDocumentModel';
 import { WorkspaceManager } from '../workspace';
 import { getDfmCommand } from '../utils/dfmUtil';
+import { DfmTaskDiscovery } from './dfmTaskDiscovery';
 
 /**
  * Diagnostic codes for DV Flow validation errors
@@ -38,12 +39,14 @@ export class FlowDiagnosticsProvider {
     private diagnosticCollection: vscode.DiagnosticCollection;
     private pendingValidations: Map<string, NodeJS.Timeout> = new Map();
     private debounceMs = 500;
+    private taskDiscovery: DfmTaskDiscovery;
 
     constructor(
         private documentCache: FlowDocumentCache,
         private workspaceManager: WorkspaceManager
     ) {
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('dvflow');
+        this.taskDiscovery = new DfmTaskDiscovery();
     }
 
     /**
@@ -165,11 +168,17 @@ export class FlowDiagnosticsProvider {
         }
 
         // Check for undefined task references in needs
+        // Get dfm-discovered tasks for validation
+        const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
+        
         for (const [, task] of flowDoc.tasks) {
             if (task.needs) {
                 for (const need of task.needs) {
                     // Check if the referenced task exists
-                    if (!flowDoc.tasks.has(need) && !this.documentCache.findTask(need)) {
+                    const existsLocally = flowDoc.tasks.has(need) || this.documentCache.findTask(need);
+                    const existsInDfm = dfmTasks.has(need);
+                    
+                    if (!existsLocally && !existsInDfm) {
                         // Check if it might be a qualified name from an import
                         const parts = need.split('.');
                         let shouldReport = false;
@@ -179,8 +188,9 @@ export class FlowDiagnosticsProvider {
                             const pkgName = parts[0];
                             if (!flowDoc.imports.has(pkgName)) {
                                 shouldReport = true;
-                                warningMessage = `Unknown task: '${need}'`;
+                                warningMessage = `Unknown task: '${need}'. Package '${pkgName}' is not imported.`;
                             }
+                            // If package IS imported, don't report - dfm will validate
                         } else {
                             shouldReport = true;
                             warningMessage = `Unknown task: '${need}'. Did you forget to define it or import a package?`;
@@ -288,6 +298,39 @@ export class FlowDiagnosticsProvider {
         }
 
         return diagnostics;
+    }
+
+    /**
+     * Get dfm-discovered tasks for validation
+     */
+    private async getDfmDiscoveredTasks(flowDoc: FlowDocument): Promise<Map<string, boolean>> {
+        const tasks = new Map<string, boolean>();
+        
+        try {
+            // Get list of imported packages
+            const imports = Array.from(flowDoc.imports.keys());
+            
+            // Get workspace root for context
+            const rootDir = path.dirname(flowDoc.uri.fsPath);
+            
+            // Discover tasks from all imported packages
+            const discoveredTasks = await this.taskDiscovery.discoverAllTasks(
+                imports,
+                rootDir
+            );
+            
+            // Add all discovered tasks to the map
+            for (const [packageName, pkgTasks] of discoveredTasks) {
+                for (const task of pkgTasks) {
+                    tasks.set(task.name, true);
+                }
+            }
+        } catch (error) {
+            // If discovery fails, return empty map (don't block validation)
+            console.error('[DV Flow Diagnostics] Failed to discover dfm tasks:', error);
+        }
+        
+        return tasks;
     }
 
     /**
@@ -551,6 +594,7 @@ export class FlowDiagnosticsProvider {
 
     dispose(): void {
         this.diagnosticCollection.dispose();
+        this.taskDiscovery.dispose();
         for (const timeout of this.pendingValidations.values()) {
             clearTimeout(timeout);
         }

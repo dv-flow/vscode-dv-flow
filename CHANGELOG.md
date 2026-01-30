@@ -8,6 +8,90 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- **DFM Status Bar Indicator**
+  
+  - **Visual Status**: Shows whether dfm (dv-flow-mgr) is available
+    - ✅ Green checkmark: DFM found and ready
+    - ⚠️ Yellow alert: DFM not found (with warning background)
+  
+  - **Click to Test**: Click status bar item to see detailed status
+    - Shows dfm path when available
+    - Shows error message when not available
+    - Offers solutions (install, configure, retry)
+    - Can test actual dfm query
+  
+  - **Auto-Refresh**: Checks dfm availability every minute
+    - Updates automatically when configuration changes
+    - Provides immediate feedback
+  
+  - **Helpful Actions**:
+    - "Test Query" - Verifies dfm can query tasks
+    - "Configure" - Opens settings to configure dfm path
+    - "Show Log" - Opens discovery log for debugging
+    - "Retry" - Re-checks dfm availability
+
+- **Dynamic Task Discovery via dv-flow-mgr**
+  
+  - **dfm Integration**: Queries `dfm show tasks` to discover all available tasks from packages
+    - No longer limited to hardcoded task lists
+    - Discovers ALL tasks that dv-flow-mgr knows about
+    - Includes proper descriptions and documentation from dfm
+    - Works with std package and all imported packages
+  
+  - **Intelligent Caching**: Performance-optimized with configurable cache
+    - Default 5-minute cache timeout (configurable)
+    - Automatic cache invalidation on configuration changes
+    - Cache invalidation when flow files are saved
+    - Can disable cache completely for always-fresh results
+  
+  - **Configuration Options**:
+    - `dvflow.completion.useDfmDiscovery`: Enable/disable dfm task discovery (default: true)
+    - `dvflow.completion.dfmCacheTimeout`: Cache timeout in seconds (default: 300, 0 = no cache)
+  
+  - **Enhanced Completion**: All std.* tasks now appear in completion
+    - std.CreateFile (previously missing)
+    - std.Exec
+    - std.FileSet
+    - std.IncDirs (previously missing)
+    - std.Message
+    - std.Prompt
+    - std.SetEnv (previously missing)
+    - std.SetFileType (previously missing)
+  
+  - **Task Discovery Log**: New command "DV Flow: Show Task Discovery Log" for debugging
+
+- **Enhanced Task Name Completion in 'needs' Clauses**
+  
+  - **Fragment Task Support**: Tasks from fragment files now appear in completions
+    - Automatically loads and indexes fragment files
+    - Applies scope filtering (local-scope tasks hidden)
+    - Shows source information: "fragment: simulation.yaml"
+    - Inherits package name from parent document
+  
+  - **Imported Package Task Support**: Tasks from imported packages available
+    - Workspace search for imported package definitions
+    - Multiple search patterns (packages dir, direct name, etc.)
+    - Only export/root scope tasks shown from imports
+    - Shows source information: "import: hdlsim"
+  
+  - **Package-Qualified Name Completion**: Full support for `package.task` syntax
+    - Context detection: recognizes `pkg.` pattern in needs
+    - Filtered completion: typing `hdlsim.` shows only hdlsim tasks
+    - Package prefix triggers: select `hdlsim.` → auto-complete hdlsim tasks
+    - Error handling: clear messages for invalid/non-imported packages
+  
+  - **Enhanced Completion Items**: Rich task information display
+    - Detail line shows: `<task-type> (<source>)`
+    - Documentation includes: type, package, scope, full name
+    - Intelligent sorting: local → fragment → import tasks
+    - Package prefixes sorted at bottom for convenience
+  
+  - **Scope-Aware Filtering**: Respects task visibility rules
+    - Local tasks: all visible within same file
+    - Fragment tasks: export/root visible, local hidden
+    - Import tasks: only export/root visible
+    - Proper scoping matches DV Flow semantics
+
 - **Task Graph Viewer - Phase 2: Advanced Interactivity**
   
   - **Node Selection**: Click nodes to select and highlight them

@@ -8,6 +8,7 @@
  * - Rename refactoring
  * - Diagnostics/validation
  * - Completion
+ * - Task discovery
  */
 
 export * from './flowDocumentModel';
@@ -17,3 +18,4 @@ export * from './diagnosticsProvider';
 export * from './renameProvider';
 export * from './completionProvider';
 export * from './codeLensProvider';
+export * from './dfmTaskDiscovery';
