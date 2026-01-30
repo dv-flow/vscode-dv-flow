@@ -6,11 +6,37 @@
  * - Parameter names based on base task
  * - Task references in needs
  * - Expression variables
+ * - Dynamic task discovery via dfm
  */
 
 import * as vscode from 'vscode';
-import { FlowDocumentCache, FlowDocument } from './flowDocumentModel';
+import { FlowDocumentCache, FlowDocument, FlowTaskDef } from './flowDocumentModel';
+import { DfmTaskDiscovery, DfmTask } from './dfmTaskDiscovery';
 import { WorkspaceManager } from '../workspace';
+import * as path from 'path';
+
+/**
+ * Enhanced task information for completion
+ */
+interface TaskInfo {
+    name: string;              // Short name: "compile"
+    fullName: string;          // Qualified: "hdlsim.compile"
+    packageName?: string;      // Package: "hdlsim"
+    scope?: string;            // Scope: "export", "root", "name", "local", "override"
+    uses?: string;             // Base type: "std.Exec"
+    description?: string;      // Task description
+    source: string;            // Display: "local", "fragment: tasks/sim.yaml", "import: hdlsim"
+}
+
+/**
+ * Enhanced completion context with package-qualified support
+ */
+interface CompletionContext {
+    type: string;
+    taskType?: string;
+    packageName?: string;      // For package-scoped completion
+    isPackageQualified?: boolean;
+}
 
 /**
  * Task type definitions for completion suggestions
@@ -64,10 +90,35 @@ const TASK_PARAMS: { [taskType: string]: { name: string; type: string; descripti
 };
 
 export class FlowCompletionProvider implements vscode.CompletionItemProvider {
+    private taskDiscovery: DfmTaskDiscovery;
+
     constructor(
         private documentCache: FlowDocumentCache,
         private workspaceManager: WorkspaceManager
-    ) {}
+    ) {
+        this.taskDiscovery = new DfmTaskDiscovery();
+    }
+
+    /**
+     * Invalidate dfm task cache
+     */
+    invalidateDfmCache(packageName?: string): void {
+        this.taskDiscovery.invalidateCache(packageName);
+    }
+
+    /**
+     * Show task discovery log
+     */
+    showTaskDiscoveryLog(): void {
+        this.taskDiscovery.showLog();
+    }
+
+    /**
+     * Dispose resources
+     */
+    dispose(): void {
+        this.taskDiscovery.dispose();
+    }
 
     async provideCompletionItems(
         document: vscode.TextDocument,
@@ -77,10 +128,15 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
     ): Promise<vscode.CompletionItem[] | vscode.CompletionList | null> {
         const line = document.lineAt(position.line).text;
         const linePrefix = line.substring(0, position.character);
+        console.log(`[DV Flow Completion] provideCompletionItems called at line ${position.line}, char ${position.character}`);
+        console.log(`[DV Flow Completion] Line: "${line}"`);
+        console.log(`[DV Flow Completion] Line prefix: "${linePrefix}"`);
+        
         const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
 
         // Determine completion context
         const completionContext = this.determineContext(linePrefix, line, document, position);
+        console.log(`[DV Flow Completion] Determined context type: ${completionContext.type}`);
 
         switch (completionContext.type) {
             case 'top-level':
@@ -88,9 +144,12 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
             case 'task-property':
                 return this.getTaskPropertyCompletions(completionContext.taskType);
             case 'uses':
-                return this.getTaskTypeCompletions(flowDoc);
+            case 'uses-package-qualified':
+                return this.getTaskTypeCompletions(flowDoc, completionContext);
             case 'needs':
-                return this.getTaskReferenceCompletions(flowDoc);
+            case 'needs-package-qualified':
+                console.log('[DV Flow Completion] Handling needs completion...');
+                return this.getTaskReferenceCompletions(flowDoc, completionContext);
             case 'with-param':
                 return this.getWithParameterCompletions(completionContext.taskType);
             case 'expression':
@@ -107,7 +166,7 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
         fullLine: string,
         document: vscode.TextDocument,
         position: vscode.Position
-    ): { type: string; taskType?: string } {
+    ): CompletionContext {
         const trimmed = linePrefix.trim();
 
         // Top-level completions
@@ -115,17 +174,49 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
             return { type: 'top-level' };
         }
 
-        // uses: completion
+        // Check for package-qualified reference in uses context
+        // Matches: "uses: pkg."
+        const usesPkgMatch = linePrefix.match(/^uses:\s*([a-zA-Z_][a-zA-Z0-9_]*)\.\s*$/);
+        if (usesPkgMatch) {
+            return { 
+                type: 'uses-package-qualified', 
+                packageName: usesPkgMatch[1],
+                isPackageQualified: true
+            };
+        }
+
+        // uses: completion (unqualified)
         if (trimmed.match(/^uses:\s*$/)) {
             return { type: 'uses' };
         }
 
-        // needs: completion
+        // Check for package-qualified reference in needs context
+        // Matches: "needs: [pkg.", "- pkg.", "needs: pkg."
+        const pkgQualifiedMatch = linePrefix.match(/(?:needs:\s*\[|(?:^|\s)-\s*|needs:\s+|,\s*)([a-zA-Z_][a-zA-Z0-9_]*)\.\s*$/);
+        if (pkgQualifiedMatch) {
+            const prevLines = this.getPreviousLines(document, position.line, 5);
+            if (prevLines.some(l => l.match(/^\s*needs:/))) {
+                return { 
+                    type: 'needs-package-qualified', 
+                    packageName: pkgQualifiedMatch[1],
+                    isPackageQualified: true
+                };
+            }
+        }
+
+        // needs: completion (unqualified)
         if (trimmed.match(/^needs:\s*\[?\s*$/) || trimmed.match(/^-\s*$/)) {
             // Check if we're in a needs context
             const prevLines = this.getPreviousLines(document, position.line, 5);
-            if (prevLines.some(l => l.includes('needs:'))) {
+            console.log(`[DV Flow Completion] Checking needs context for: "${trimmed}"`);
+            console.log(`[DV Flow Completion] Previous lines:`, prevLines);
+            const hasNeeds = prevLines.some(l => l.includes('needs:'));
+            console.log(`[DV Flow Completion] Has needs in previous lines: ${hasNeeds}`);
+            if (hasNeeds) {
+                console.log('[DV Flow Completion] Detected needs context');
                 return { type: 'needs' };
+            } else {
+                console.log('[DV Flow Completion] Not in needs context');
             }
         }
 
@@ -144,18 +235,23 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
 
         // Task property completion (inside a task definition)
         if (trimmed === '' || trimmed.match(/^[a-z]/)) {
+            console.log(`[DV Flow Completion] Checking task-property for: "${trimmed}"`);
             const taskType = this.findCurrentTaskType(document, position.line);
+            console.log(`[DV Flow Completion] Found task type: ${taskType}`);
             return { type: 'task-property', taskType };
         }
 
         // Import completion
         if (trimmed.match(/^-\s*$/)) {
             const prevLines = this.getPreviousLines(document, position.line, 10);
+            console.log(`[DV Flow Completion] Checking import context for: "${trimmed}"`);
             if (prevLines.some(l => l.match(/^imports:\s*$/))) {
+                console.log('[DV Flow Completion] Detected import context');
                 return { type: 'import' };
             }
         }
 
+        console.log(`[DV Flow Completion] No context matched, returning unknown`);
         return { type: 'unknown' };
     }
 
@@ -253,8 +349,85 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
         return items;
     }
 
-    private getTaskTypeCompletions(flowDoc: FlowDocument): vscode.CompletionItem[] {
+    private async getTaskTypeCompletions(
+        flowDoc: FlowDocument,
+        context?: CompletionContext
+    ): Promise<vscode.CompletionItem[]> {
+        console.log('[DV Flow Completion] getTaskTypeCompletions called');
+        console.log('[DV Flow Completion] Context:', context);
+        
+        // Get dfm-discovered tasks
+        const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
+        console.log(`[DV Flow Completion] dfmTasks available: ${dfmTasks.size}`);
+        
+        // If package-qualified, filter to that package
+        if (context?.isPackageQualified && context.packageName) {
+            console.log(`[DV Flow Completion] Package-qualified context: ${context.packageName}`);
+            const items: vscode.CompletionItem[] = [];
+            
+            // Filter dfm tasks to the specified package
+            for (const [key, dfmTask] of dfmTasks) {
+                if (dfmTask.package === context.packageName) {
+                    console.log(`[DV Flow Completion] Adding task: ${dfmTask.short_name} (from ${dfmTask.package})`);
+                    // Create completion item for package-qualified context
+                    // User typed: "uses: std." so we insert just "FileSet"
+                    const item = new vscode.CompletionItem(
+                        dfmTask.short_name, // Display: "FileSet"
+                        vscode.CompletionItemKind.Class
+                    );
+                    item.detail = dfmTask.desc || dfmTask.doc.split('\n')[0] || `${dfmTask.package} task`;
+                    item.documentation = this.createDfmTaskDocumentation(dfmTask);
+                    item.insertText = dfmTask.short_name; // Insert: "FileSet" (std. already typed)
+                    item.filterText = dfmTask.short_name; // Filter by: "FileSet"
+                    item.sortText = `0_${dfmTask.short_name}`;
+                    
+                    console.log(`[DV Flow Completion]   label: "${item.label}"`);
+                    console.log(`[DV Flow Completion]   insertText: "${item.insertText}"`);
+                    console.log(`[DV Flow Completion]   filterText: "${item.filterText}"`);
+                    console.log(`[DV Flow Completion]   sortText: "${item.sortText}"`);
+                    
+                    items.push(item);
+                }
+            }
+            
+            console.log(`[DV Flow Completion] Returning ${items.length} package-qualified items`);
+            
+            if (items.length === 0) {
+                const errorItem = new vscode.CompletionItem(
+                    `No tasks in package '${context.packageName}'`,
+                    vscode.CompletionItemKind.Text
+                );
+                items.push(errorItem);
+            }
+            
+            return items;
+        }
+        
+        // Unqualified context - show hardcoded + dfm tasks with FULL names
+        console.log('[DV Flow Completion] Unqualified context - adding all tasks');
         const items = [...TASK_TYPE_COMPLETIONS];
+        console.log(`[DV Flow Completion] Started with ${items.length} hardcoded tasks`);
+
+        // Add dfm-discovered tasks (all packages) with full names
+        console.log(`[DV Flow Completion] Adding ${dfmTasks.size} dfm tasks`);
+        for (const [key, dfmTask] of dfmTasks) {
+            console.log(`[DV Flow Completion] Adding dfm task: ${dfmTask.name}`);
+            const item = new vscode.CompletionItem(
+                dfmTask.name, // Display full name: "std.FileSet"
+                vscode.CompletionItemKind.Class
+            );
+            item.detail = dfmTask.desc || dfmTask.doc.split('\n')[0] || `${dfmTask.package} task`;
+            item.documentation = this.createDfmTaskDocumentation(dfmTask);
+            item.insertText = dfmTask.name; // Insert full name: "std.FileSet"
+            item.filterText = dfmTask.name; // Filter by full name
+            item.sortText = `1_${dfmTask.name}`;
+            
+            console.log(`[DV Flow Completion]   label: "${item.label}"`);
+            console.log(`[DV Flow Completion]   insertText: "${item.insertText}"`);
+            console.log(`[DV Flow Completion]   filterText: "${item.filterText}"`);
+            
+            items.push(item);
+        }
 
         // Add task types from imports
         for (const [importName, importDef] of flowDoc.imports) {
@@ -273,31 +446,496 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
             items.push(item);
         }
 
+        console.log(`[DV Flow Completion] Returning ${items.length} total items for uses completion`);
         return items;
     }
 
-    private getTaskReferenceCompletions(flowDoc: FlowDocument): vscode.CompletionItem[] {
+    private async getTaskReferenceCompletions(
+        flowDoc: FlowDocument,
+        context?: CompletionContext
+    ): Promise<vscode.CompletionItem[]> {
+        console.log('[DV Flow Completion] getTaskReferenceCompletions called');
+        console.log('[DV Flow Completion] Context:', context);
+        
         const items: vscode.CompletionItem[] = [];
-
-        // Add all tasks from the document
-        for (const [taskName, task] of flowDoc.tasks) {
-            const item = new vscode.CompletionItem(taskName, vscode.CompletionItemKind.Reference);
-            item.detail = task.uses || 'Task';
-            if (task.description) {
-                item.documentation = task.description;
-            }
+        const allTasks = await this.getAllAvailableTasks(flowDoc);
+        console.log(`[DV Flow Completion] Workspace tasks collected: ${allTasks.size}`);
+        
+        // Add dfm-discovered tasks
+        const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
+        console.log(`[DV Flow Completion] DFM tasks discovered: ${dfmTasks.size}`);
+        for (const [key, task] of dfmTasks) {
+            console.log(`[DV Flow Completion]   - ${task.name} (${task.package})`);
+        }
+        
+        // If package-qualified context, filter to that package only
+        if (context?.isPackageQualified && context.packageName) {
+            console.log(`[DV Flow Completion] Package-qualified context: ${context.packageName}`);
+            return this.getPackageScopedTaskCompletions(
+                flowDoc, 
+                allTasks,
+                dfmTasks, 
+                context.packageName
+            );
+        }
+        
+        // Otherwise, show all available tasks (unqualified)
+        console.log('[DV Flow Completion] Unqualified needs context - adding all tasks');
+        
+        // Add workspace tasks
+        for (const [key, taskInfo] of allTasks) {
+            const item = this.createTaskCompletionItem(taskInfo);
             items.push(item);
         }
-
-        // Add tasks from imports (with package prefix)
-        for (const [importName] of flowDoc.imports) {
-            const item = new vscode.CompletionItem(`${importName}.`, vscode.CompletionItemKind.Module);
-            item.detail = `Tasks from ${importName}`;
-            item.command = { command: 'editor.action.triggerSuggest', title: 'Trigger Suggest' };
+        console.log(`[DV Flow Completion] Added ${allTasks.size} workspace tasks`);
+        
+        // Add dfm-discovered tasks with FULL names (std.FileSet)
+        console.log(`[DV Flow Completion] Adding ${dfmTasks.size} dfm tasks with full names`);
+        for (const [key, dfmTask] of dfmTasks) {
+            const item = new vscode.CompletionItem(
+                dfmTask.name, // Full name: "std.FileSet"
+                vscode.CompletionItemKind.Class
+            );
+            item.detail = dfmTask.desc || dfmTask.doc.split('\n')[0] || `${dfmTask.package} task`;
+            item.documentation = this.createDfmTaskDocumentation(dfmTask);
+            item.insertText = dfmTask.name; // Insert full name: "std.FileSet"
+            item.filterText = dfmTask.name; // Filter by full name
+            item.sortText = `3_dfm_${dfmTask.name}`;
+            
+            console.log(`[DV Flow Completion]   Adding: ${dfmTask.name}`);
+            console.log(`[DV Flow Completion]     insertText: "${item.insertText}"`);
+            console.log(`[DV Flow Completion]     filterText: "${item.filterText}"`);
+            
             items.push(item);
         }
-
+        console.log(`[DV Flow Completion] Added ${dfmTasks.size} dfm tasks`);
+        
+        // Add package prefix triggers (e.g., "std." → shows std tasks)
+        items.push(...this.createPackagePrefixItems(flowDoc));
+        
+        console.log(`[DV Flow Completion] Total completion items: ${items.length}`);
         return items;
+    }
+
+    /**
+     * Collect all available tasks from local file, fragments, and imports
+     */
+    private async getAllAvailableTasks(flowDoc: FlowDocument): Promise<Map<string, TaskInfo>> {
+        const tasks = new Map<string, TaskInfo>();
+        
+        // Add local tasks (from current package)
+        for (const [name, task] of flowDoc.tasks) {
+            const taskInfo: TaskInfo = {
+                name,
+                fullName: task.fullName,
+                packageName: flowDoc.packageName,
+                scope: task.scope,
+                uses: task.uses,
+                description: task.description,
+                source: 'local'
+            };
+            tasks.set(name, taskInfo);
+        }
+        
+        // Add fragment tasks (inherit package name from parent)
+        await this.addFragmentTasks(flowDoc, tasks);
+        
+        // Add imported package tasks
+        await this.addImportedTasks(flowDoc, tasks);
+        
+        return tasks;
+    }
+
+    /**
+     * Add tasks from fragment files
+     */
+    private async addFragmentTasks(
+        flowDoc: FlowDocument, 
+        tasks: Map<string, TaskInfo>
+    ): Promise<void> {
+        for (const fragment of flowDoc.fragments) {
+            try {
+                // Resolve fragment path relative to current document
+                const docDir = path.dirname(flowDoc.uri.fsPath);
+                const fragmentPath = path.isAbsolute(fragment.path)
+                    ? fragment.path
+                    : path.resolve(docDir, fragment.path);
+                const fragmentUri = vscode.Uri.file(fragmentPath);
+                
+                const fragmentDoc = await this.documentCache.getDocument(fragmentUri);
+                if (fragmentDoc) {
+                    for (const [name, task] of fragmentDoc.tasks) {
+                        // Skip local-scope tasks from fragments (not visible)
+                        if (task.scope === 'local') {
+                            continue;
+                        }
+                        
+                        const taskInfo: TaskInfo = {
+                            name,
+                            fullName: task.fullName,
+                            packageName: flowDoc.packageName, // Inherit from parent
+                            scope: task.scope,
+                            uses: task.uses,
+                            description: task.description,
+                            source: `fragment: ${path.basename(fragment.path)}`
+                        };
+                        
+                        // Use name as key to allow overriding
+                        tasks.set(name, taskInfo);
+                    }
+                }
+            } catch (error) {
+                console.debug(`Could not load fragment ${fragment.path}:`, error);
+            }
+        }
+    }
+
+    /**
+     * Add tasks from imported packages
+     */
+    private async addImportedTasks(
+        flowDoc: FlowDocument, 
+        tasks: Map<string, TaskInfo>
+    ): Promise<void> {
+        for (const [importName, importDef] of flowDoc.imports) {
+            try {
+                const importDoc = await this.loadImportedPackage(importName, importDef, flowDoc);
+                if (importDoc) {
+                    for (const [name, task] of importDoc.tasks) {
+                        // Only export/root tasks from imports are visible
+                        if (task.scope !== 'export' && task.scope !== 'root') {
+                            continue;
+                        }
+                        
+                        // Use package-qualified name as key to avoid collisions
+                        const fullName = `${importDoc.packageName || importName}.${name}`;
+                        const taskInfo: TaskInfo = {
+                            name,
+                            fullName,
+                            packageName: importDoc.packageName || importName,
+                            scope: task.scope,
+                            uses: task.uses,
+                            description: task.description,
+                            source: `import: ${importName}`
+                        };
+                        
+                        tasks.set(fullName, taskInfo);
+                    }
+                }
+            } catch (error) {
+                console.debug(`Could not load imported package ${importName}:`, error);
+            }
+        }
+    }
+
+    /**
+     * Load an imported package definition
+     */
+    private async loadImportedPackage(
+        importName: string,
+        importDef: any,
+        flowDoc: FlowDocument
+    ): Promise<FlowDocument | undefined> {
+        // If import has an explicit path, use it
+        if (importDef.path) {
+            const docDir = path.dirname(flowDoc.uri.fsPath);
+            const importPath = path.isAbsolute(importDef.path)
+                ? importDef.path
+                : path.resolve(docDir, importDef.path);
+            const importUri = vscode.Uri.file(importPath);
+            return await this.documentCache.getDocument(importUri);
+        }
+        
+        // Otherwise, search workspace for package
+        return await this.findImportedPackageInWorkspace(importName);
+    }
+
+    /**
+     * Search workspace for an imported package
+     */
+    private async findImportedPackageInWorkspace(
+        importName: string
+    ): Promise<FlowDocument | undefined> {
+        const patterns = [
+            `**/${importName}/flow.yaml`,
+            `**/${importName}/flow.yml`,
+            `**/packages/${importName}/flow.yaml`,
+            `**/packages/${importName}/flow.yml`,
+            `**/${importName}.yaml`,
+            `**/${importName}.yml`,
+        ];
+        
+        for (const pattern of patterns) {
+            try {
+                const files = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 1);
+                if (files.length > 0) {
+                    return await this.documentCache.getDocument(files[0]);
+                }
+            } catch (error) {
+                console.debug(`Error searching for ${pattern}:`, error);
+            }
+        }
+        
+        return undefined;
+    }
+
+    /**
+     * Get completions for a specific package (when user types "pkg.")
+     */
+    private getPackageScopedTaskCompletions(
+        flowDoc: FlowDocument,
+        allTasks: Map<string, TaskInfo>,
+        dfmTasks: Map<string, DfmTask>,
+        packageName: string
+    ): vscode.CompletionItem[] {
+        const items: vscode.CompletionItem[] = [];
+        
+        // Check if package is std (always available) or imported
+        const isStd = packageName === 'std';
+        const importDef = flowDoc.imports.get(packageName);
+        
+        if (!isStd && !importDef) {
+            // Package not imported - show error item
+            const errorItem = new vscode.CompletionItem(
+                `Package '${packageName}' not imported`,
+                vscode.CompletionItemKind.Text
+            );
+            errorItem.detail = 'Add to imports section';
+            errorItem.documentation = new vscode.MarkdownString(
+                `The package \`${packageName}\` is not in the imports list.\n\n` +
+                `Add it to the imports section:\n\`\`\`yaml\nimports:\n  - ${packageName}\n\`\`\``
+            );
+            return [errorItem];
+        }
+        
+        // Filter workspace tasks to this package
+        for (const [key, taskInfo] of allTasks) {
+            if (taskInfo.packageName === packageName) {
+                const item = new vscode.CompletionItem(
+                    taskInfo.name,
+                    vscode.CompletionItemKind.Reference
+                );
+                item.detail = `${taskInfo.uses || 'Task'} (${packageName})`;
+                item.documentation = this.createTaskDocumentation(taskInfo);
+                item.filterText = taskInfo.name;
+                item.insertText = taskInfo.name;
+                item.sortText = `0_${taskInfo.name}`;
+                items.push(item);
+            }
+        }
+        
+        // Filter dfm tasks to this package
+        for (const [key, dfmTask] of dfmTasks) {
+            if (dfmTask.package === packageName) {
+                const item = new vscode.CompletionItem(
+                    dfmTask.short_name, // Display: "FileSet"
+                    vscode.CompletionItemKind.Class
+                );
+                item.detail = dfmTask.desc || dfmTask.doc.split('\n')[0] || `${packageName} task`;
+                item.documentation = this.createDfmTaskDocumentation(dfmTask);
+                item.filterText = dfmTask.short_name; // Filter by: "FileSet"
+                item.insertText = dfmTask.short_name; // Insert: "FileSet" (package. already typed)
+                item.sortText = `1_${dfmTask.short_name}`; // dfm tasks after workspace tasks
+                items.push(item);
+            }
+        }
+        
+        if (items.length === 0) {
+            const noTasksItem = new vscode.CompletionItem(
+                `No tasks in '${packageName}'`,
+                vscode.CompletionItemKind.Text
+            );
+            noTasksItem.detail = 'Package has no exported tasks';
+            items.push(noTasksItem);
+        }
+        
+        return items;
+    }
+
+    /**
+     * Create a completion item for a task
+     */
+    private createTaskCompletionItem(taskInfo: TaskInfo): vscode.CompletionItem {
+        // Use short name for display and insertion
+        const item = new vscode.CompletionItem(
+            taskInfo.name,
+            vscode.CompletionItemKind.Reference
+        );
+        
+        // Detail shows type and source
+        item.detail = `${taskInfo.uses || 'Task'} (${taskInfo.source})`;
+        
+        // Documentation with rich information
+        item.documentation = this.createTaskDocumentation(taskInfo);
+        
+        // Sort text for intelligent ordering (local > fragment > import)
+        item.sortText = this.getTaskSortText(taskInfo);
+        
+        return item;
+    }
+
+    /**
+     * Create documentation for a task
+     */
+    private createTaskDocumentation(taskInfo: TaskInfo): vscode.MarkdownString {
+        const docs = new vscode.MarkdownString();
+        
+        if (taskInfo.description) {
+            docs.appendMarkdown(`${taskInfo.description}\n\n`);
+        }
+        
+        docs.appendMarkdown(`**Type:** \`${taskInfo.uses || 'N/A'}\`\n`);
+        docs.appendMarkdown(`**Package:** \`${taskInfo.packageName || 'local'}\`\n`);
+        
+        if (taskInfo.scope) {
+            docs.appendMarkdown(`**Scope:** \`${taskInfo.scope}\`\n`);
+        }
+        
+        if (taskInfo.fullName !== taskInfo.name) {
+            docs.appendMarkdown(`**Full Name:** \`${taskInfo.fullName}\`\n`);
+        }
+        
+        docs.appendMarkdown(`\n**Source:** ${taskInfo.source}`);
+        
+        return docs;
+    }
+
+    /**
+     * Get sort text for intelligent task ordering
+     */
+    private getTaskSortText(taskInfo: TaskInfo): string {
+        // Prioritize: local (0) > fragment (1) > import (2)
+        let prefix: string;
+        if (taskInfo.source === 'local') {
+            prefix = '0';
+        } else if (taskInfo.source.startsWith('fragment')) {
+            prefix = '1';
+        } else {
+            prefix = '2';
+        }
+        return `${prefix}_${taskInfo.name}`;
+    }
+
+    /**
+     * Create package prefix trigger items
+     */
+    private createPackagePrefixItems(flowDoc: FlowDocument): vscode.CompletionItem[] {
+        const items: vscode.CompletionItem[] = [];
+        
+        for (const [importName, importDef] of flowDoc.imports) {
+            const prefixItem = new vscode.CompletionItem(
+                `${importName}.`,
+                vscode.CompletionItemKind.Module
+            );
+            prefixItem.detail = `Browse tasks in ${importName} package`;
+            prefixItem.documentation = new vscode.MarkdownString(
+                `Type \`${importName}.\` to see all tasks from the **${importName}** package.`
+            );
+            prefixItem.insertText = `${importName}.`;
+            prefixItem.command = {
+                command: 'editor.action.triggerSuggest',
+                title: 'Show Package Tasks'
+            };
+            // Sort package prefixes at the bottom
+            prefixItem.sortText = `9_${importName}`;
+            items.push(prefixItem);
+        }
+        
+        return items;
+    }
+
+    /**
+     * Get tasks discovered by dfm
+     */
+    private async getDfmDiscoveredTasks(
+        flowDoc: FlowDocument
+    ): Promise<Map<string, DfmTask>> {
+        console.log('[DV Flow Completion] getDfmDiscoveredTasks called');
+        const tasks = new Map<string, DfmTask>();
+        
+        // Get list of imported packages (including std)
+        const imports = Array.from(flowDoc.imports.keys());
+        console.log(`[DV Flow Completion] Imports from document: ${imports.join(', ') || '(none)'}`);
+        
+        // Get workspace root for context
+        const rootDir = path.dirname(flowDoc.uri.fsPath);
+        console.log(`[DV Flow Completion] Root directory: ${rootDir}`);
+        
+        try {
+            // Discover tasks from all imported packages (including std)
+            console.log('[DV Flow Completion] Calling taskDiscovery.discoverAllTasks...');
+            const discoveredTasks = await this.taskDiscovery.discoverAllTasks(
+                imports,
+                rootDir
+            );
+            console.log(`[DV Flow Completion] Discovered tasks from ${discoveredTasks.size} packages`);
+            
+            // Flatten into single map with full name as key
+            for (const [pkg, pkgTasks] of discoveredTasks) {
+                console.log(`[DV Flow Completion] Package ${pkg}: ${pkgTasks.length} tasks`);
+                for (const task of pkgTasks) {
+                    tasks.set(task.name, task);
+                }
+            }
+            
+            console.log(`[DV Flow Completion] Total dfm tasks collected: ${tasks.size}`);
+        } catch (error) {
+            console.error('[DV Flow Completion] Error discovering dfm tasks:', error);
+        }
+        
+        return tasks;
+    }
+
+    /**
+     * Create completion item from dfm task
+     */
+    private createDfmTaskCompletionItem(task: DfmTask): vscode.CompletionItem {
+        const item = new vscode.CompletionItem(
+            task.short_name,
+            vscode.CompletionItemKind.Class
+        );
+        
+        // Use desc for detail, fall back to first line of doc
+        item.detail = task.desc || task.doc.split('\n')[0] || `${task.package} task`;
+        
+        // Create rich documentation
+        item.documentation = this.createDfmTaskDocumentation(task);
+        
+        // Sort dfm tasks after workspace tasks but before package prefixes
+        item.sortText = `3_dfm_${task.short_name}`;
+        
+        return item;
+    }
+
+    /**
+     * Create documentation for dfm task
+     */
+    private createDfmTaskDocumentation(task: DfmTask): vscode.MarkdownString {
+        const docs = new vscode.MarkdownString();
+        
+        docs.appendMarkdown(`**${task.name}**\n\n`);
+        
+        if (task.desc) {
+            docs.appendMarkdown(`${task.desc}\n\n`);
+        }
+        
+        if (task.doc) {
+            docs.appendMarkdown(`${task.doc}\n\n`);
+        }
+        
+        docs.appendMarkdown(`**Package:** \`${task.package}\`\n`);
+        
+        if (task.uses) {
+            docs.appendMarkdown(`**Uses:** \`${task.uses}\`\n`);
+        }
+        
+        if (task.scope && task.scope.length > 0) {
+            docs.appendMarkdown(`**Scope:** \`${task.scope.join(', ')}\`\n`);
+        }
+        
+        docs.appendMarkdown(`\n**Source:** dfm-discovered`);
+        
+        return docs;
     }
 
     private getWithParameterCompletions(taskType?: string): vscode.CompletionItem[] {

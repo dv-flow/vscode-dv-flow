@@ -8,7 +8,7 @@ import * as child_process from 'child_process';
 import * as fs from 'fs';
 import { getDfmCommand, testDfmDiscovery, showDiscoveryLog } from './utils/dfmUtil';
 import { WorkspaceManager, WorkspaceInfo } from './workspace';
-import { ActiveRootStatusBar, registerTraceTerminalLinkProvider } from './ui';
+import { ActiveRootStatusBar, DfmStatusBar, registerTraceTerminalLinkProvider } from './ui';
 import {
     FlowDocumentCache,
     FlowHoverProvider,
@@ -156,10 +156,12 @@ let legacyTreeDataProvider: NodeDependenciesProvider | undefined;
 let flowFileSystem: FlowFileSystem | undefined;
 let workspaceManager: WorkspaceManager | undefined;
 let activeRootStatusBar: ActiveRootStatusBar | undefined;
+let dfmStatusBar: DfmStatusBar | undefined;
 let documentCache: FlowDocumentCache | undefined;
 let diagnosticsProvider: FlowDiagnosticsProvider | undefined;
 let runPanelProvider: RunPanelProvider | undefined;
 let taskDetailsPanelProvider: TaskDetailsPanelProvider | undefined;
+let completionProvider: FlowCompletionProvider | undefined;
 
 import { DVFlowTaskProvider } from './taskRunner';
 import { DVFlowDebugConfigProvider, DVFlowDebugAdapterFactory } from './debugProvider';
@@ -167,8 +169,9 @@ import { DVFlowYAMLEditorProvider } from './dvYamlEditor';
 export async function activate(context: vscode.ExtensionContext) {
     console.log('Congratulations, your extension "vscode-dv-flow" is now active!');
 
+    // NOTE: DVFlowYAMLEditorProvider is deprecated - using FlowCompletionProvider instead
     // Register DV Flow language features
-    context.subscriptions.push(...DVFlowYAMLEditorProvider.register(context));
+    // context.subscriptions.push(...DVFlowYAMLEditorProvider.register(context));
 
     // Associate .dv files with YAML validation from RedHat extension
     // const yamlValidation = await vscode.commands.executeCommand('yaml.getSchemaContributions');
@@ -241,6 +244,49 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('vscode-dv-flow.showDiscoveryLog', () => {
             showDiscoveryLog();
+        })
+    );
+
+    // Register show task discovery log command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vscode-dv-flow.showTaskDiscoveryLog', () => {
+            // This will be set after completionProvider is created
+            if (completionProvider) {
+                completionProvider.showTaskDiscoveryLog();
+            }
+        })
+    );
+
+    // Register test task discovery command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vscode-dv-flow.testTaskDiscovery', async () => {
+            const config = vscode.workspace.getConfiguration('dvflow.completion');
+            const isEnabled = config.get<boolean>('useDfmDiscovery', true);
+            const cacheTimeout = config.get<number>('dfmCacheTimeout', 300);
+            
+            const message = `Task Discovery Settings:\n` +
+                          `  Enabled: ${isEnabled}\n` +
+                          `  Cache Timeout: ${cacheTimeout} seconds\n\n` +
+                          `Check the Developer Console (Help > Toggle Developer Tools) for detailed logs.`;
+            
+            vscode.window.showInformationMessage(message);
+            
+            console.log('=== DV Flow Task Discovery Test ===');
+            console.log(`Enabled: ${isEnabled}`);
+            console.log(`Cache Timeout: ${cacheTimeout}`);
+            console.log(`Completion Provider: ${completionProvider ? 'Available' : 'Not initialized'}`);
+            console.log('===================================');
+        })
+    );
+
+    // Register test DFM status command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vscode-dv-flow.testDfmStatus', async () => {
+            if (dfmStatusBar) {
+                await dfmStatusBar.showDetailedStatus();
+            } else {
+                vscode.window.showWarningMessage('DFM Status Bar not initialized');
+            }
         })
     );
 
@@ -400,9 +446,34 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         
         // Enhanced completion provider
-        const completionProvider = new FlowCompletionProvider(documentCache, workspaceManager);
+        completionProvider = new FlowCompletionProvider(documentCache, workspaceManager);
         context.subscriptions.push(
             vscode.languages.registerCompletionItemProvider(flowSelector, completionProvider, ':', '.', ' ', '$', '{')
+        );
+        // Register completion provider for disposal
+        context.subscriptions.push(completionProvider);
+        
+        // Invalidate dfm task cache when configuration changes
+        context.subscriptions.push(
+            vscode.workspace.onDidChangeConfiguration((event) => {
+                if (event.affectsConfiguration('dvflow.completion') || 
+                    event.affectsConfiguration('dvflow.dfmPath') ||
+                    event.affectsConfiguration('dvflow.pythonPath')) {
+                    completionProvider?.invalidateDfmCache();
+                    dfmStatusBar?.refresh(); // Refresh DFM status
+                }
+            })
+        );
+        
+        // Invalidate cache when flow files change
+        context.subscriptions.push(
+            vscode.workspace.onDidSaveTextDocument((doc) => {
+                if (doc.uri.fsPath.endsWith('flow.yaml') || 
+                    doc.uri.fsPath.endsWith('flow.yml') ||
+                    doc.uri.fsPath.endsWith('.dv')) {
+                    completionProvider?.invalidateDfmCache();
+                }
+            })
         );
         
         // CodeLens provider
@@ -435,6 +506,11 @@ export async function activate(context: vscode.ExtensionContext) {
         // Create the active root status bar
         activeRootStatusBar = new ActiveRootStatusBar(workspaceManager);
         context.subscriptions.push(activeRootStatusBar);
+
+        // Create the DFM status bar
+        dfmStatusBar = new DfmStatusBar();
+        context.subscriptions.push(dfmStatusBar);
+        dfmStatusBar.startAutoCheck(); // Periodic status checks
 
         // Register Run Panel
         runPanelProvider = new RunPanelProvider(context.extensionUri, workspaceManager, outputChannel);

@@ -2,7 +2,7 @@
   "name": "vscode-dv-flow",
   "displayName": "vscode-dv-flow",
   "description": "VSCode support for the dv-flow build tool",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "matthew-ballance",
   "engines": {
     "vscode": "^1.98.0"
@@ -422,6 +422,17 @@
           "type": "string",
           "default": "",
           "description": "Path to the Python interpreter to use for dfm (if dfmPath is not set)"
+        },
+        "dvflow.completion.useDfmDiscovery": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use dfm to dynamically discover available tasks from packages for completion suggestions"
+        },
+        "dvflow.completion.dfmCacheTimeout": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "Cache timeout in seconds for dfm task discovery (0 = no cache, always query dfm)"
         },
         "dvflow.perfetto.url": {
           "type": "string",
