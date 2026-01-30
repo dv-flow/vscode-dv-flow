@@ -205,6 +205,12 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                         cursor: pointer;
                     }
                     
+                    .toolbar-select:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                        background-color: var(--vscode-input-background);
+                    }
+                    
                     .toolbar-search {
                         background-color: var(--vscode-input-background);
                         color: var(--vscode-input-foreground);
@@ -357,6 +363,47 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                         font-size: 10px;
                     }
                     
+                    /* Schedule view layer styles */
+                    .schedule-layer {
+                        fill: var(--vscode-editor-selectionBackground);
+                        fill-opacity: 0.1;
+                        stroke: var(--vscode-editorWidget-border);
+                        stroke-width: 1px;
+                        stroke-dasharray: 5, 5;
+                        pointer-events: all;
+                        cursor: pointer;
+                        transition: fill-opacity 0.2s ease;
+                    }
+                    
+                    .schedule-layer:hover {
+                        fill-opacity: 0.2;
+                    }
+                    
+                    .schedule-layer.highlighted {
+                        fill: var(--vscode-editor-selectionBackground);
+                        fill-opacity: 0.3;
+                        stroke-width: 2px;
+                        stroke-dasharray: none;
+                    }
+                    
+                    .schedule-layer-label {
+                        fill: var(--vscode-descriptionForeground);
+                        font-family: var(--vscode-font-family);
+                        font-size: 11px;
+                        font-weight: 600;
+                        pointer-events: none;
+                        user-select: none;
+                    }
+                    
+                    .schedule-layer-count {
+                        fill: var(--vscode-descriptionForeground);
+                        font-family: var(--vscode-font-family);
+                        font-size: 9px;
+                        pointer-events: none;
+                        user-select: none;
+                        opacity: 0.7;
+                    }
+                    
                     .context-menu {
                         position: fixed;
                         background: var(--vscode-menu-background);
@@ -383,6 +430,16 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
             </head>
             <body>
                 <div class="toolbar">
+                    <div class="toolbar-group">
+                        <label class="toolbar-label">View:</label>
+                        <select class="toolbar-select" id="viewSelect">
+                            <option value="dependency" selected>Dependencies</option>
+                            <option value="schedule">Schedule Order</option>
+                        </select>
+                    </div>
+                    
+                    <div class="toolbar-divider"></div>
+                    
                     <div class="toolbar-group">
                         <label class="toolbar-label">Layout:</label>
                         <select class="toolbar-select" id="layoutSelect">
@@ -431,6 +488,9 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                             let zoomBehavior;
                             let lastTransform = d3.zoomIdentity;
                             let currentLayout = 'TB';
+                            let currentView = 'dependency';
+                            let currentDotContent = '';
+                            let scheduleLayers = null;
 
                             console.log('[FlowGraph Webview] Initializing graphviz...');
                             let graphviz;
@@ -448,12 +508,333 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                                 throw error;
                             }
 
+                        // View selector
+                        document.getElementById('viewSelect').addEventListener('change', (e) => {
+                            currentView = e.target.value;
+                            console.log('View changed to:', currentView);
+                            
+                            // Disable layout selector in schedule view
+                            const layoutSelect = document.getElementById('layoutSelect');
+                            if (currentView === 'schedule') {
+                                layoutSelect.disabled = true;
+                                layoutSelect.title = 'Layout is fixed to LR in Schedule Order view';
+                            } else {
+                                layoutSelect.disabled = false;
+                                layoutSelect.title = '';
+                            }
+                            
+                            if (currentDotContent) {
+                                renderCurrentView();
+                            }
+                        });
+
                         // Layout selector
                         document.getElementById('layoutSelect').addEventListener('change', (e) => {
                             currentLayout = e.target.value;
-                            // Note: Changing layout requires re-generating the graph from dfm
                             console.log('Layout changed to:', currentLayout);
+                            if (currentDotContent) {
+                                renderCurrentView();
+                            }
                         });
+
+                        // Parse DOT format to extract graph structure
+                        function parseDOT(dotContent) {
+                            const nodes = new Map(); // nodeId -> label
+                            const edges = []; // [{from, to}]
+                            
+                            const lines = dotContent.split('\\n');
+                            
+                            for (const line of lines) {
+                                const trimmed = line.trim();
+                                
+                                // Parse node definitions: nodeId [label="TaskName" ...]
+                                if (!trimmed.includes('->') && trimmed.includes('[')) {
+                                    const nodeMatch = /(\\w+)\\s*\\[([^\\]]+)\\]/.exec(trimmed);
+                                    if (nodeMatch) {
+                                        const nodeId = nodeMatch[1];
+                                        const attributes = nodeMatch[2];
+                                        const labelMatch = /label\\s*=\\s*"([^"]+)"/.exec(attributes);
+                                        if (labelMatch) {
+                                            nodes.set(nodeId, labelMatch[1]);
+                                        }
+                                    }
+                                }
+                                
+                                // Parse edges: nodeId1 -> nodeId2
+                                if (trimmed.includes('->')) {
+                                    const edgeMatch = /(\\w+)\\s*->\\s*(\\w+)/.exec(trimmed);
+                                    if (edgeMatch) {
+                                        edges.push({
+                                            from: edgeMatch[1],
+                                            to: edgeMatch[2]
+                                        });
+                                    }
+                                }
+                            }
+                            
+                            console.log(\`[FlowGraph] Parsed \${nodes.size} nodes and \${edges.length} edges\`);
+                            return { nodes, edges };
+                        }
+
+                        // Compute topological sort layers using Kahn's algorithm
+                        function computeScheduleLayers(nodes, edges) {
+                            // Build adjacency list and in-degree map
+                            const adjList = new Map(); // nodeId -> [dependent nodeIds]
+                            const inDegree = new Map(); // nodeId -> count of incoming edges
+                            
+                            // Initialize
+                            for (const nodeId of nodes.keys()) {
+                                adjList.set(nodeId, []);
+                                inDegree.set(nodeId, 0);
+                            }
+                            
+                            // Build graph
+                            for (const edge of edges) {
+                                adjList.get(edge.from).push(edge.to);
+                                inDegree.set(edge.to, inDegree.get(edge.to) + 1);
+                            }
+                            
+                            // Kahn's algorithm with layer tracking
+                            const layers = [];
+                            let queue = [];
+                            
+                            // Find all nodes with no dependencies (layer 0)
+                            for (const [nodeId, degree] of inDegree.entries()) {
+                                if (degree === 0) {
+                                    queue.push(nodeId);
+                                }
+                            }
+                            
+                            while (queue.length > 0) {
+                                const currentLayer = [...queue];
+                                layers.push(currentLayer.map(nodeId => ({
+                                    id: nodeId,
+                                    label: nodes.get(nodeId)
+                                })));
+                                
+                                queue = [];
+                                
+                                for (const nodeId of currentLayer) {
+                                    for (const neighbor of adjList.get(nodeId)) {
+                                        inDegree.set(neighbor, inDegree.get(neighbor) - 1);
+                                        if (inDegree.get(neighbor) === 0) {
+                                            queue.push(neighbor);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Check for cycles
+                            const processedNodes = layers.flat().length;
+                            if (processedNodes < nodes.size) {
+                                console.warn(\`[FlowGraph] Detected cycle in graph! Processed \${processedNodes}/\${nodes.size} nodes\`);
+                                // Add remaining nodes to a final "cyclic" layer
+                                const remaining = [];
+                                for (const nodeId of nodes.keys()) {
+                                    if (!layers.flat().some(n => n.id === nodeId)) {
+                                        remaining.push({ id: nodeId, label: nodes.get(nodeId) });
+                                    }
+                                }
+                                if (remaining.length > 0) {
+                                    layers.push(remaining);
+                                }
+                            }
+                            
+                            console.log(\`[FlowGraph] Computed \${layers.length} schedule layers\`);
+                            layers.forEach((layer, i) => {
+                                console.log(\`  Layer \${i}: \${layer.length} tasks - \${layer.map(n => n.label).join(', ')}\`);
+                            });
+                            
+                            return layers;
+                        }
+
+                        // Render schedule view with layer visualization
+                        function renderScheduleView() {
+                            if (!scheduleLayers || scheduleLayers.length === 0) {
+                                console.warn('[FlowGraph] No schedule layers to render');
+                                return;
+                            }
+                            
+                            // Force LR layout for schedule view to show progression left-to-right
+                            const scheduleLayout = currentLayout === 'TB' || currentLayout === 'BT' ? 'LR' : currentLayout;
+                            
+                            // Modify DOT to use schedule layout
+                            let modifiedDot = currentDotContent.replace(/digraph\\s+\\w*\\s*\\{/, \`digraph {\\n  rankdir=\${scheduleLayout};\`);
+                            
+                            // Render with graphviz
+                            graphviz
+                                .renderDot(modifiedDot)
+                                .on("end", function() {
+                                    console.log('[FlowGraph] Schedule view rendered');
+                                    addScheduleLayerVisualization();
+                                    scaleToFit();
+                                    setTimeout(() => {
+                                        initZoom();
+                                        if (currentZoom !== 1) {
+                                            zoomGraph(currentZoom);
+                                        }
+                                        initNodeHandlers();
+                                    }, 100);
+                                });
+                        }
+
+                        // Add visual layer indicators to schedule view
+                        function addScheduleLayerVisualization() {
+                            const svg = d3.select("#graph svg");
+                            if (svg.empty() || !scheduleLayers) return;
+                            
+                            const g = svg.select("g");
+                            const isHorizontal = currentLayout === 'LR' || currentLayout === 'RL';
+                            
+                            // Get bounding boxes for each layer
+                            const layerBounds = scheduleLayers.map((layer, layerIndex) => {
+                                const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+                                let nodeCount = 0;
+                                
+                                for (const node of layer) {
+                                    // Find the node in the SVG by its label
+                                    const nodeElements = g.selectAll('.node');
+                                    nodeElements.each(function() {
+                                        const nodeEl = d3.select(this);
+                                        const labelText = nodeEl.select('text').text();
+                                        if (labelText === node.label) {
+                                            const bbox = this.getBBox();
+                                            const transform = this.getAttribute('transform');
+                                            let tx = 0, ty = 0;
+                                            if (transform) {
+                                                const match = transform.match(/translate\\(([\\d.-]+)[, ]([\\d.-]+)\\)/);
+                                                if (match) {
+                                                    tx = parseFloat(match[1]);
+                                                    ty = parseFloat(match[2]);
+                                                }
+                                            }
+                                            bounds.minX = Math.min(bounds.minX, tx + bbox.x);
+                                            bounds.minY = Math.min(bounds.minY, ty + bbox.y);
+                                            bounds.maxX = Math.max(bounds.maxX, tx + bbox.x + bbox.width);
+                                            bounds.maxY = Math.max(bounds.maxY, ty + bbox.y + bbox.height);
+                                            nodeCount++;
+                                        }
+                                    });
+                                }
+                                
+                                return nodeCount > 0 ? { ...bounds, layerIndex, nodeCount } : null;
+                            }).filter(b => b !== null);
+                            
+                            if (layerBounds.length === 0) return;
+                            
+                            // Create a group for layer visualizations (behind nodes)
+                            let layerGroup = g.select('.schedule-layers');
+                            if (layerGroup.empty()) {
+                                layerGroup = g.insert('g', ':first-child')
+                                    .attr('class', 'schedule-layers');
+                            } else {
+                                layerGroup.selectAll('*').remove();
+                            }
+                            
+                            // Draw layer backgrounds and labels
+                            layerBounds.forEach(bounds => {
+                                const padding = 20;
+                                const x = bounds.minX - padding;
+                                const y = bounds.minY - padding;
+                                const width = bounds.maxX - bounds.minX + 2 * padding;
+                                const height = bounds.maxY - bounds.minY + 2 * padding;
+                                
+                                // Layer background rectangle
+                                const layerRect = layerGroup.append('rect')
+                                    .attr('class', 'schedule-layer')
+                                    .attr('x', x)
+                                    .attr('y', y)
+                                    .attr('width', width)
+                                    .attr('height', height)
+                                    .attr('data-layer', bounds.layerIndex);
+                                
+                                // Layer label
+                                const labelY = y - 5;
+                                layerGroup.append('text')
+                                    .attr('class', 'schedule-layer-label')
+                                    .attr('x', x + width / 2)
+                                    .attr('y', labelY)
+                                    .attr('text-anchor', 'middle')
+                                    .text(\`Layer \${bounds.layerIndex}\`);
+                                
+                                // Task count
+                                layerGroup.append('text')
+                                    .attr('class', 'schedule-layer-count')
+                                    .attr('x', x + width / 2)
+                                    .attr('y', labelY + 12)
+                                    .attr('text-anchor', 'middle')
+                                    .text(\`\${bounds.nodeCount} task\${bounds.nodeCount !== 1 ? 's' : ''}\`);
+                                
+                                // Click to highlight layer
+                                layerRect.on('click', function(event) {
+                                    event.stopPropagation();
+                                    const layerIndex = parseInt(d3.select(this).attr('data-layer'));
+                                    highlightScheduleLayer(layerIndex);
+                                });
+                            });
+                        }
+
+                        // Highlight all nodes in a schedule layer
+                        function highlightScheduleLayer(layerIndex) {
+                            const svg = d3.select("#graph svg");
+                            const g = svg.select("g");
+                            
+                            // Clear previous highlights
+                            g.selectAll('.schedule-layer').classed('highlighted', false);
+                            g.selectAll('.node').classed('selected', false);
+                            
+                            if (layerIndex < 0 || layerIndex >= scheduleLayers.length) return;
+                            
+                            // Highlight layer background
+                            g.select(\`.schedule-layer[data-layer="\${layerIndex}"]\`).classed('highlighted', true);
+                            
+                            // Highlight nodes in this layer
+                            const layer = scheduleLayers[layerIndex];
+                            const nodeElements = g.selectAll('.node');
+                            
+                            nodeElements.each(function() {
+                                const nodeEl = d3.select(this);
+                                const labelText = nodeEl.select('text').text();
+                                const isInLayer = layer.some(n => n.label === labelText);
+                                if (isInLayer) {
+                                    nodeEl.classed('selected', true);
+                                }
+                            });
+                            
+                            console.log(\`[FlowGraph] Highlighted layer \${layerIndex} with \${layer.length} tasks\`);
+                        }
+
+                        // Render current view (dependency or schedule)
+                        function renderCurrentView() {
+                            if (!currentDotContent) return;
+                            
+                            if (currentView === 'schedule') {
+                                // Parse and compute schedule if not already done
+                                if (!scheduleLayers) {
+                                    const { nodes, edges } = parseDOT(currentDotContent);
+                                    scheduleLayers = computeScheduleLayers(nodes, edges);
+                                }
+                                renderScheduleView();
+                            } else {
+                                // Render normal dependency view
+                                scheduleLayers = null; // Clear schedule data
+                                let modifiedDot = currentDotContent.replace(/digraph\\s+\\w*\\s*\\{/, \`digraph {\\n  rankdir=\${currentLayout};\`);
+                                
+                                graphviz
+                                    .renderDot(modifiedDot)
+                                    .on("end", function() {
+                                        console.log('[FlowGraph] Dependency view rendered');
+                                        scaleToFit();
+                                        setTimeout(() => {
+                                            initZoom();
+                                            if (currentZoom !== 1) {
+                                                zoomGraph(currentZoom);
+                                            }
+                                            initNodeHandlers();
+                                        }, 100);
+                                    });
+                            }
+                        }
 
                         function initZoom() {
                             const svg = d3.select("#graph svg");
@@ -926,25 +1307,14 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                                     }
                                     
                                     try {
-                                        console.log('[FlowGraph Webview] Calling graphviz.renderDot...');
+                                        // Store DOT content for view switching
+                                        currentDotContent = message.content;
+                                        scheduleLayers = null; // Reset schedule layers
+                                        
+                                        console.log('[FlowGraph Webview] Rendering with current view:', currentView);
                                         vscode.postMessage({ type: 'debug', message: 'Starting render' });
                                         
-                                        graphviz
-                                            .renderDot(message.content)
-                                            .on("end", function() {
-                                                console.log('[FlowGraph Webview] ✓ Graph rendered successfully');
-                                                vscode.postMessage({ type: 'debug', message: 'Render complete' });
-                                                
-                                                scaleToFit();
-                                                setTimeout(() => {
-                                                    initZoom();
-                                                    if (currentZoom !== 1) {
-                                                        zoomGraph(currentZoom);
-                                                    }
-                                                    initNodeHandlers();
-                                                    console.log('[FlowGraph Webview] ✓ Post-render initialization complete');
-                                                }, 100);
-                                            });
+                                        renderCurrentView();
                                     } catch (error) {
                                         console.error('[FlowGraph Webview] ERROR: Failed to render graph:', error);
                                         vscode.postMessage({ type: 'error', message: 'Exception during render', error: error.toString() });
