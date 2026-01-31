@@ -77,9 +77,9 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
             return 'task-needs';
         }
         
-        // Check for needs list item format: "  - task_name"
-        // But exclude file paths (which contain / or .)
-        if (trimmed.match(/^-\s*["']?[a-zA-Z_][a-zA-Z0-9_]*["']?\s*$/)) {
+        // Check for needs list item format: "  - task_name" or "  - fragment.task_name"
+        // Allow dots for fragment-qualified names
+        if (trimmed.match(/^-\s*["']?[a-zA-Z_][a-zA-Z0-9_.]*["']?\s*$/)) {
             // This could be a needs list item - need to check context
             // For now, treat any list item that looks like a task name as a potential needs reference
             return 'task-needs';
@@ -95,7 +95,12 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         }
         
         // Check for import reference (qualified name like pkg.task)
+        // But be careful - could also be fragment.task in a needs list
         if (word.includes('.') && !trimmed.startsWith('uses:')) {
+            // If this is a list item (starts with -), treat as task reference
+            if (trimmed.startsWith('- ')) {
+                return 'task-needs';
+            }
             return 'import';
         }
         
@@ -209,12 +214,27 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
             return [this.locationFromFlowLocation(found.task.location)];
         }
         
-        // Try to find in imports
+        // Try to find as fragment-qualified name (e.g., "sub.MyTask3")
+        // If taskName contains a dot but wasn't found above, it might be a fragment reference
         const parts = taskName.split('.');
         if (parts.length > 1) {
-            const packageName = parts[0];
+            // Could be fragment.task or package.task or package.fragment.task
+            // Try to resolve it by checking all loaded fragments
+            const fragmentName = parts[0];
             const taskOnlyName = parts.slice(1).join('.');
             
+            // Look for tasks with matching fragment and task names
+            const fragmentTask = this.documentCache.findTaskByFragment(
+                flowDoc.packageName || '',
+                fragmentName,
+                taskOnlyName
+            );
+            if (fragmentTask) {
+                return [this.locationFromFlowLocation(fragmentTask.task.location)];
+            }
+            
+            // Try to find in imports
+            const packageName = parts[0];
             const importDef = flowDoc.imports.get(packageName);
             if (importDef && importDef.path) {
                 // Try to find the task in the imported package

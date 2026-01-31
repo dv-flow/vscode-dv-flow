@@ -89,6 +89,7 @@ export interface FlowFragmentRef {
 export interface FlowDocument {
     uri: vscode.Uri;
     packageName?: string;
+    fragmentName?: string;
     tasks: Map<string, FlowTaskDef>;
     types: Map<string, FlowTypeDef>;
     imports: Map<string, FlowImportDef>;
@@ -198,12 +199,18 @@ export class FlowDocumentParser {
                 inPackageBlock = false;
             }
             
-            // Handle nested structure under package: block
+            // Handle nested structure under package: or fragment: block
             if (inPackageBlock && indent > 0) {
-                // Check for name: under package:
+                // Check for name: under package: or fragment:
                 const nameMatch = trimmed.match(/^name:\s*(.+)$/);
                 if (nameMatch) {
-                    doc.packageName = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+                    const name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+                    // If we're in a fragment block, set fragmentName; otherwise set packageName
+                    if (lines.slice(0, lineNum).some(l => l.trim() === 'fragment:')) {
+                        doc.fragmentName = name;
+                    } else {
+                        doc.packageName = name;
+                    }
                     continue;
                 }
                 
@@ -274,9 +281,18 @@ export class FlowDocumentParser {
         if (taskNameMatch) {
             const scopeMarker = taskNameMatch[1] as 'name' | 'export' | 'root' | 'local' | 'override';
             const taskName = taskNameMatch[2].trim().replace(/^["']|["']$/g, '');
+            
+            // Build full name: package.fragment.task or package.task
+            let fullName = taskName;
+            if (doc.fragmentName && doc.packageName) {
+                fullName = `${doc.packageName}.${doc.fragmentName}.${taskName}`;
+            } else if (doc.packageName) {
+                fullName = `${doc.packageName}.${taskName}`;
+            }
+            
             const task: FlowTaskDef = {
                 name: taskName,
-                fullName: doc.packageName ? `${doc.packageName}.${taskName}` : taskName,
+                fullName: fullName,
                 scope: scopeMarker,
                 location: {
                     file,
@@ -576,9 +592,13 @@ export class FlowDocumentCache {
                 const parentPackageName = await this.findParentPackageName(uri);
                 if (parentPackageName) {
                     doc.packageName = parentPackageName;
-                    // Update fullNames of all tasks with the inherited package name
+                    // Update fullNames of all tasks with the inherited package name and fragment name
                     for (const [name, task] of doc.tasks) {
-                        task.fullName = `${parentPackageName}.${name}`;
+                        if (doc.fragmentName) {
+                            task.fullName = `${parentPackageName}.${doc.fragmentName}.${name}`;
+                        } else {
+                            task.fullName = `${parentPackageName}.${name}`;
+                        }
                     }
                 }
             }
@@ -606,9 +626,13 @@ export class FlowDocumentCache {
             const parentPackageName = await this.findParentPackageName(uri);
             if (parentPackageName) {
                 doc.packageName = parentPackageName;
-                // Update fullNames of all tasks with the inherited package name
+                // Update fullNames of all tasks with the inherited package name and fragment name
                 for (const [name, task] of doc.tasks) {
-                    task.fullName = `${parentPackageName}.${name}`;
+                    if (doc.fragmentName) {
+                        task.fullName = `${parentPackageName}.${doc.fragmentName}.${name}`;
+                    } else {
+                        task.fullName = `${parentPackageName}.${name}`;
+                    }
                 }
             }
         }
@@ -717,17 +741,65 @@ export class FlowDocumentCache {
     }
 
     /**
+     * Get all cached documents
+     */
+    getAllDocuments(): FlowDocument[] {
+        return Array.from(this.cache.values());
+    }
+
+    /**
      * Find a task definition by name across all cached documents
      */
     findTask(name: string): { doc: FlowDocument; task: FlowTaskDef } | undefined {
         for (const doc of this.cache.values()) {
             const task = doc.tasks.get(name);
             if (task) {
-                return { doc, task };
+                // Only return if this task is NOT in a named fragment
+                // Tasks in named fragments must be referenced with qualified names
+                if (!doc.fragmentName) {
+                    return { doc, task };
+                }
             }
             // Also check full names
             for (const [, t] of doc.tasks) {
                 if (t.fullName === name) {
+                    return { doc, task: t };
+                }
+                
+                // Also check fragment-qualified names (e.g., "sub.MyTask3" should match "my_package.sub.MyTask3")
+                if (t.fullName && name.includes('.')) {
+                    const parts = name.split('.');
+                    if (parts.length === 2) {
+                        // Could be fragment.task format
+                        const [fragmentOrPkg, taskName] = parts;
+                        // Check if this matches as fragment.task within the same package
+                        if (doc.fragmentName === fragmentOrPkg && t.name === taskName) {
+                            return { doc, task: t };
+                        }
+                    }
+                }
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Find a task by package, fragment, and task name
+     */
+    findTaskByFragment(packageName: string, fragmentName: string, taskName: string): { doc: FlowDocument; task: FlowTaskDef } | undefined {
+        for (const doc of this.cache.values()) {
+            // Check if this document is the right fragment
+            if (doc.packageName === packageName && doc.fragmentName === fragmentName) {
+                const task = doc.tasks.get(taskName);
+                if (task) {
+                    return { doc, task };
+                }
+            }
+            
+            // Also check full qualified names
+            const fullName = `${packageName}.${fragmentName}.${taskName}`;
+            for (const [, t] of doc.tasks) {
+                if (t.fullName === fullName) {
                     return { doc, task: t };
                 }
             }

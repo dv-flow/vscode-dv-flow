@@ -179,18 +179,33 @@ export class FlowDiagnosticsProvider {
                     const existsInDfm = dfmTasks.has(need);
                     
                     if (!existsLocally && !existsInDfm) {
-                        // Check if it might be a qualified name from an import
+                        // Check if it might be a qualified name from an import or fragment
                         const parts = need.split('.');
                         let shouldReport = false;
                         let warningMessage = '';
                         
                         if (parts.length > 1) {
-                            const pkgName = parts[0];
-                            if (!flowDoc.imports.has(pkgName)) {
-                                shouldReport = true;
-                                warningMessage = `Unknown task: '${need}'. Package '${pkgName}' is not imported.`;
+                            const pkgOrFragmentName = parts[0];
+                            
+                            // Check if it's an import package
+                            if (!flowDoc.imports.has(pkgOrFragmentName)) {
+                                // Check if it might be a fragment-qualified reference
+                                // Look through all cached documents for a matching fragment
+                                let isFragmentReference = false;
+                                for (const cachedDoc of this.documentCache.getAllDocuments()) {
+                                    if (cachedDoc.fragmentName === pkgOrFragmentName && 
+                                        cachedDoc.packageName === flowDoc.packageName) {
+                                        isFragmentReference = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!isFragmentReference) {
+                                    shouldReport = true;
+                                    warningMessage = `Unknown task: '${need}'. Package '${pkgOrFragmentName}' is not imported.`;
+                                }
                             }
-                            // If package IS imported, don't report - dfm will validate
+                            // If package IS imported or it's a fragment, don't report - dfm will validate
                         } else {
                             shouldReport = true;
                             warningMessage = `Unknown task: '${need}'. Did you forget to define it or import a package?`;

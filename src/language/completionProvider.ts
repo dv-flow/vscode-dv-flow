@@ -484,7 +484,7 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
         
         // Add workspace tasks
         for (const [key, taskInfo] of allTasks) {
-            const item = this.createTaskCompletionItem(taskInfo);
+            const item = this.createTaskCompletionItem(key, taskInfo);
             items.push(item);
         }
         console.log(`[DV Flow Completion] Added ${allTasks.size} workspace tasks`);
@@ -580,8 +580,14 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
                             source: `fragment: ${path.basename(fragment.path)}`
                         };
                         
-                        // Use name as key to allow overriding
-                        tasks.set(name, taskInfo);
+                        // For named fragments, use qualified name as key (e.g., "sub.MyTask3")
+                        // For unnamed fragments, use simple name as key for backward compatibility
+                        if (fragmentDoc.fragmentName) {
+                            const qualifiedName = `${fragmentDoc.fragmentName}.${name}`;
+                            tasks.set(qualifiedName, taskInfo);
+                        } else {
+                            tasks.set(name, taskInfo);
+                        }
                     }
                 }
             } catch (error) {
@@ -755,10 +761,10 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
     /**
      * Create a completion item for a task
      */
-    private createTaskCompletionItem(taskInfo: TaskInfo): vscode.CompletionItem {
-        // Use short name for display and insertion
+    private createTaskCompletionItem(displayName: string, taskInfo: TaskInfo): vscode.CompletionItem {
+        // Use displayName for label (could be qualified like "sub.MyTask3")
         const item = new vscode.CompletionItem(
-            taskInfo.name,
+            displayName,
             vscode.CompletionItemKind.Reference
         );
         

@@ -675,4 +675,50 @@ suite('Definition Provider Test Suite', () => {
             assert.ok(location.uri.fsPath.includes('common.dv'));
         }
     });
+    
+    test('Navigate to task with fragment-qualified name', async () => {
+        // Named fragment with exported task
+        const fragmentContent = `fragment:
+  name: sub
+  
+  tasks:
+  - export: MyTask3
+    desc: Task from named fragment
+`;
+        const fragmentUri = vscode.Uri.file('/test/subdir/flow.yaml');
+        await documentCache.parseFromText(fragmentUri, fragmentContent);
+        
+        // Main package that references the fragment task
+        const mainContent = `package:
+  name: my_package
+  
+  fragments:
+  - subdir/flow.yaml
+  
+  tasks:
+  - root: DoIt
+    desc: Root task
+    needs:
+    - sub.MyTask3
+`;
+        const mainUri = vscode.Uri.file('/test/flow.yaml');
+        const mainDoc = createMockDocument(mainUri, mainContent);
+        
+        await documentCache.parseFromText(mainUri, mainContent);
+        definitionProvider = new FlowDefinitionProvider(documentCache, mockWorkspaceManager);
+        
+        // Position on "sub.MyTask3" in needs
+        const position = new vscode.Position(10, 8);
+        
+        const result = await definitionProvider.provideDefinition(mainDoc, position, {} as vscode.CancellationToken);
+        
+        assert.ok(result, 'Should navigate to task in named fragment');
+        
+        if (Array.isArray(result)) {
+            assert.strictEqual(result.length, 1);
+            const location = result[0] as vscode.Location;
+            assert.ok(location.uri.fsPath.includes('subdir/flow.yaml'), 'Should point to fragment file');
+            assert.strictEqual(location.range.start.line, 4, 'Should point to export line');
+        }
+    });
 });
