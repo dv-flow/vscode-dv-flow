@@ -217,37 +217,149 @@ export class DfmTaskDiscovery {
     }
 
     /**
-     * Get all tasks from all imported packages
+     * Get all tasks from all available packages (not just imported ones)
+     * 
+     * This queries dfm without a package filter to discover all installed and 
+     * visible tasks, including those from packages like hdlsim, fusesoc, cc, etc.
+     * 
+     * @param imports - List of imported packages (for context/logging, not used for filtering)
+     * @param rootDir - Root directory for the query context
+     * @returns Map of package name to array of tasks
      */
     async discoverAllTasks(
         imports: string[],
         rootDir?: string
     ): Promise<Map<string, DfmTask[]>> {
-        const result = new Map<string, DfmTask[]>();
-        
-        // Always include std package (it's implicitly available)
-        const packagesToDiscover = new Set(['std', ...imports]);
-
-        this.log(`Discovering tasks from packages: ${Array.from(packagesToDiscover).join(', ')}`);
-
-        // Discover tasks in parallel for better performance
-        const discoveries = Array.from(packagesToDiscover).map(async (pkg) => {
-            try {
-                const tasks = await this.discoverTasks(pkg, rootDir);
-                return { pkg, tasks };
-            } catch (error) {
-                this.log(`Error discovering ${pkg}: ${error}`);
-                return { pkg, tasks: [] };
-            }
-        });
-
-        const results = await Promise.all(discoveries);
-        
-        for (const { pkg, tasks } of results) {
-            result.set(pkg, tasks);
+        if (!this.isEnabled()) {
+            this.log(`Task discovery disabled in configuration`);
+            return new Map();
         }
 
+        const cacheKey = `__all__:${rootDir || 'default'}`;
+        
+        // Check cache
+        if (this.isCacheValid(cacheKey)) {
+            this.log(`Using cached tasks for all packages`);
+            return this._reconstructMapFromCache(cacheKey);
+        }
+        
+        try {
+            this.log(`Discovering tasks from all available packages`);
+            const tasks = await this.queryAllDfmTasks(rootDir);
+            
+            // Group tasks by package
+            const result = new Map<string, DfmTask[]>();
+            for (const task of tasks) {
+                if (!result.has(task.package)) {
+                    result.set(task.package, []);
+                }
+                result.get(task.package)!.push(task);
+            }
+            
+            // Cache the flat list
+            this.cache.set(cacheKey, tasks);
+            this.lastRefresh.set(cacheKey, Date.now());
+            
+            this.log(`Discovered ${tasks.length} tasks from ${result.size} packages`);
+            return result;
+        } catch (error) {
+            this.log(`Failed to discover all tasks: ${error}`);
+            console.error(`Failed to discover all tasks:`, error);
+            return new Map();
+        }
+    }
+
+    /**
+     * Reconstruct package map from cached flat list
+     */
+    private _reconstructMapFromCache(cacheKey: string): Map<string, DfmTask[]> {
+        const tasks = this.cache.get(cacheKey) || [];
+        const result = new Map<string, DfmTask[]>();
+        
+        for (const task of tasks) {
+            if (!result.has(task.package)) {
+                result.set(task.package, []);
+            }
+            result.get(task.package)!.push(task);
+        }
+        
         return result;
+    }
+
+    /**
+     * Query all available tasks from dfm (without package filter)
+     */
+    private async queryAllDfmTasks(rootDir?: string): Promise<DfmTask[]> {
+        try {
+            const dfmCmd = await discoverDfm();
+            this.log(`Discovered dfm command: ${dfmCmd}`);
+
+            const args = ['show', 'tasks', '--json'];
+            
+            if (rootDir) {
+                args.push('--root', rootDir);
+            }
+
+            this.log(`Executing: ${dfmCmd} ${args.join(' ')}`);
+
+            const fullCommand = `${dfmCmd} ${args.join(' ')}`;
+
+            return new Promise((resolve, reject) => {
+                child_process.exec(
+                    fullCommand,
+                    { 
+                        cwd: rootDir,
+                        maxBuffer: 10 * 1024 * 1024, // 10MB
+                        timeout: 30000 // 30 second timeout
+                    },
+                    (error, stdout, stderr) => {
+                        if (error) {
+                            // Log stderr but don't fail on warnings
+                            if (stderr) {
+                                this.log(`dfm stderr: ${stderr}`);
+                            }
+                            reject(new Error(`dfm failed: ${error.message}`));
+                            return;
+                        }
+
+                        try {
+                            // dfm may output warnings/errors before JSON
+                            const jsonPattern = /\{\s*"command":\s*"show tasks"/;
+                            const match = stdout.match(jsonPattern);
+                            
+                            if (!match) {
+                                this.log(`No valid JSON response found in output. Full output: ${stdout.substring(0, 500)}`);
+                                throw new Error('No valid JSON response found in output');
+                            }
+                            
+                            const jsonStart = match.index!;
+                            
+                            // Log any warnings/messages before JSON
+                            if (jsonStart > 0) {
+                                const warnings = stdout.substring(0, jsonStart).trim();
+                                if (warnings) {
+                                    this.log(`dfm warnings/errors: ${warnings}`);
+                                }
+                            }
+                            
+                            // Parse just the JSON portion
+                            const jsonOutput = stdout.substring(jsonStart);
+                            this.log(`Attempting to parse JSON (first 200 chars): ${jsonOutput.substring(0, 200)}`);
+                            
+                            const response: DfmTasksResponse = JSON.parse(jsonOutput);
+                            resolve(response.results || []);
+                        } catch (parseError) {
+                            this.log(`Failed to parse dfm output. Full stdout (first 500 chars): ${stdout.substring(0, 500)}`);
+                            this.log(`Parse error: ${parseError}`);
+                            reject(new Error(`Failed to parse dfm output: ${parseError}`));
+                        }
+                    }
+                );
+            });
+        } catch (error) {
+            this.log(`Error in queryAllDfmTasks: ${error}`);
+            throw error;
+        }
     }
 
     /**

@@ -156,6 +156,9 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
                 return this.getExpressionCompletions(flowDoc);
             case 'import':
                 return this.getImportCompletions();
+            case 'fragment':
+                // Don't offer task completions in fragments section
+                return null;
             default:
                 return null;
         }
@@ -210,6 +213,14 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
             const prevLines = this.getPreviousLines(document, position.line, 5);
             console.log(`[DV Flow Completion] Checking needs context for: "${trimmed}"`);
             console.log(`[DV Flow Completion] Previous lines:`, prevLines);
+            
+            // Check if we're in a fragments section (should not offer completions)
+            const hasFragments = prevLines.some(l => l.match(/^\s*fragments:\s*$/));
+            if (hasFragments) {
+                console.log('[DV Flow Completion] In fragments section, not offering task completions');
+                return { type: 'fragment' };
+            }
+            
             const hasNeeds = prevLines.some(l => l.includes('needs:'));
             console.log(`[DV Flow Completion] Has needs in previous lines: ${hasNeeds}`);
             if (hasNeeds) {
@@ -851,7 +862,7 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
     }
 
     /**
-     * Get tasks discovered by dfm
+     * Get tasks discovered by dfm from all available packages
      */
     private async getDfmDiscoveredTasks(
         flowDoc: FlowDocument
@@ -859,7 +870,7 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
         console.log('[DV Flow Completion] getDfmDiscoveredTasks called');
         const tasks = new Map<string, DfmTask>();
         
-        // Get list of imported packages (including std)
+        // Get list of imported packages for logging/context
         const imports = Array.from(flowDoc.imports.keys());
         console.log(`[DV Flow Completion] Imports from document: ${imports.join(', ') || '(none)'}`);
         
@@ -868,7 +879,8 @@ export class FlowCompletionProvider implements vscode.CompletionItemProvider {
         console.log(`[DV Flow Completion] Root directory: ${rootDir}`);
         
         try {
-            // Discover tasks from all imported packages (including std)
+            // Discover tasks from all available packages (not just imported ones)
+            // This allows completion for hdlsim, fusesoc, and other installed packages
             console.log('[DV Flow Completion] Calling taskDiscovery.discoverAllTasks...');
             const discoveredTasks = await this.taskDiscovery.discoverAllTasks(
                 imports,

@@ -424,13 +424,15 @@ export async function activate(context: vscode.ExtensionContext) {
         // Hover provider
         const hoverProvider = new FlowHoverProvider(documentCache, workspaceManager);
         context.subscriptions.push(
-            vscode.languages.registerHoverProvider(flowSelector, hoverProvider)
+            vscode.languages.registerHoverProvider(flowSelector, hoverProvider),
+            hoverProvider
         );
         
         // Definition provider
         const definitionProvider = new FlowDefinitionProvider(documentCache, workspaceManager);
         context.subscriptions.push(
-            vscode.languages.registerDefinitionProvider(flowSelector, definitionProvider)
+            vscode.languages.registerDefinitionProvider(flowSelector, definitionProvider),
+            definitionProvider
         );
         
         // References provider

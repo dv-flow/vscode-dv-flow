@@ -9,12 +9,22 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { FlowDocumentCache, FlowDocument, FlowTaskDef, FlowLocation } from './flowDocumentModel';
 import { WorkspaceManager } from '../workspace';
+import { DfmTaskDiscovery } from './dfmTaskDiscovery';
 
 export class FlowDefinitionProvider implements vscode.DefinitionProvider {
+    private taskDiscovery: DfmTaskDiscovery;
+    private packageLocations: Map<string, string> = new Map();
+
     constructor(
         private documentCache: FlowDocumentCache,
         private workspaceManager: WorkspaceManager
-    ) {}
+    ) {
+        this.taskDiscovery = new DfmTaskDiscovery();
+    }
+
+    dispose(): void {
+        this.taskDiscovery.dispose();
+    }
 
     async provideDefinition(
         document: vscode.TextDocument,
@@ -51,7 +61,7 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         
         switch (context) {
             case 'task-uses':
-                return this.findTaskTypeDefinition(word);
+                return this.findTaskTypeDefinition(word, flowDoc, document);
             case 'task-needs':
                 return this.findTaskDefinition(word, flowDoc, document);
             case 'import':
@@ -107,13 +117,21 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
         return 'unknown';
     }
 
-    private async findTaskTypeDefinition(typeName: string): Promise<vscode.Location[] | null> {
+    private async findTaskTypeDefinition(typeName: string, flowDoc?: FlowDocument, document?: vscode.TextDocument): Promise<vscode.Location[] | null> {
         // For task types like std.FileSet, try to find the definition
         
         // Check if it's a reference to a task in the current workspace
         const found = this.documentCache.findTask(typeName);
         if (found) {
             return [this.locationFromFlowLocation(found.task.location)];
+        }
+        
+        // Try dfm-discovered tasks
+        if (flowDoc) {
+            const dfmLocation = await this.findDfmTaskLocation(typeName, flowDoc);
+            if (dfmLocation) {
+                return [dfmLocation];
+            }
         }
         
         // Check if this is a library package reference (e.g., std.Message)
@@ -214,6 +232,12 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
             return [this.locationFromFlowLocation(found.task.location)];
         }
         
+        // Try dfm-discovered tasks
+        const dfmLocation = await this.findDfmTaskLocation(taskName, flowDoc);
+        if (dfmLocation) {
+            return [dfmLocation];
+        }
+        
         // Try to find as fragment-qualified name (e.g., "sub.MyTask3")
         // If taskName contains a dot but wasn't found above, it might be a fragment reference
         const parts = taskName.split('.');
@@ -251,6 +275,144 @@ export class FlowDefinitionProvider implements vscode.DefinitionProvider {
                     }
                 }
             }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Find the location of a dfm-discovered task
+     */
+    private async findDfmTaskLocation(
+        taskName: string,
+        flowDoc: FlowDocument
+    ): Promise<vscode.Location | null> {
+        try {
+            // Get list of imported packages for context
+            const imports = Array.from(flowDoc.imports.keys());
+            
+            // Get workspace root for context
+            const rootDir = path.dirname(flowDoc.uri.fsPath);
+            
+            // Discover tasks from all available packages
+            const discoveredTasks = await this.taskDiscovery.discoverAllTasks(
+                imports,
+                rootDir
+            );
+            
+            // Find the task
+            let dfmTask: any = null;
+            for (const [pkg, pkgTasks] of discoveredTasks) {
+                for (const task of pkgTasks) {
+                    if (task.name === taskName) {
+                        dfmTask = task;
+                        break;
+                    }
+                }
+                if (dfmTask) break;
+            }
+            
+            if (!dfmTask) {
+                console.log(`[DefinitionProvider] Task ${taskName} not found in dfm tasks`);
+                return null;
+            }
+            
+            console.log(`[DefinitionProvider] Found dfm task ${taskName} in package ${dfmTask.package}`);
+            
+            // Get the package location
+            const packageLocation = await this.getPackageLocation(dfmTask.package, rootDir);
+            if (!packageLocation) {
+                console.log(`[DefinitionProvider] Could not find location for package ${dfmTask.package}`);
+                return null;
+            }
+            
+            console.log(`[DefinitionProvider] Package ${dfmTask.package} located at ${packageLocation}`);
+            
+            // Try to find the flow file in the package
+            const flowFiles = ['flow.dv', 'flow.yaml', 'flow.yml'];
+            
+            // For multi-level packages like hdlsim.ivl, also check for ivl_flow.dv pattern
+            const packageParts = dfmTask.package.split('.');
+            if (packageParts.length > 1) {
+                const lastPart = packageParts[packageParts.length - 1];
+                flowFiles.unshift(`${lastPart}_flow.dv`);
+            }
+            
+            for (const flowFile of flowFiles) {
+                const flowPath = path.join(packageLocation, flowFile);
+                try {
+                    const flowUri = vscode.Uri.file(flowPath);
+                    await vscode.workspace.fs.stat(flowUri);
+                    
+                    console.log(`[DefinitionProvider] Found flow file: ${flowPath}`);
+                    
+                    // Load and parse the flow file
+                    const flowDoc = await this.documentCache.getDocument(flowUri);
+                    if (flowDoc) {
+                        // Find the task in this document
+                        const task = flowDoc.tasks.get(dfmTask.short_name);
+                        if (task) {
+                            console.log(`[DefinitionProvider] Found task ${dfmTask.short_name} at ${task.location.file}:${task.location.line}`);
+                            return this.locationFromFlowLocation(task.location);
+                        }
+                    }
+                } catch (error) {
+                    // File doesn't exist, try next
+                    continue;
+                }
+            }
+            
+            // If we couldn't find the exact task location, return the package directory
+            console.log(`[DefinitionProvider] Could not find task definition in flow files, returning package location`);
+            return new vscode.Location(
+                vscode.Uri.file(packageLocation),
+                new vscode.Position(0, 0)
+            );
+            
+        } catch (error) {
+            console.error(`[DefinitionProvider] Error finding dfm task location:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Get the file system location of a package
+     */
+    private async getPackageLocation(packageName: string, rootDir: string): Promise<string | null> {
+        // Check cache
+        if (this.packageLocations.has(packageName)) {
+            return this.packageLocations.get(packageName)!;
+        }
+        
+        try {
+            const { getDfmCommand } = require('../utils/dfmUtil');
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            
+            const fullCommand = await getDfmCommand(rootDir, `show package ${packageName}`);
+            
+            console.log(`[DefinitionProvider] Executing: ${fullCommand} in ${rootDir}`);
+            const result = await execAsync(fullCommand, { cwd: rootDir });
+            
+            // Parse the output to find the Location: line
+            const lines = result.stdout.split('\n');
+            for (const line of lines) {
+                const match = line.match(/^Location:\s*(.+)$/);
+                if (match) {
+                    const location = match[1].trim();
+                    console.log(`[DefinitionProvider] Found package ${packageName} at: ${location}`);
+                    
+                    // Cache the location
+                    this.packageLocations.set(packageName, location);
+                    
+                    return location;
+                }
+            }
+            
+            console.log(`[DefinitionProvider] No location found in output for package ${packageName}`);
+        } catch (error) {
+            console.error(`[DefinitionProvider] Could not find package location for ${packageName}:`, error);
         }
         
         return null;

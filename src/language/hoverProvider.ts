@@ -6,14 +6,27 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { FlowDocumentCache, FlowDocument, FlowTaskDef, FlowParamDef, FlowImportDef } from './flowDocumentModel';
 import { WorkspaceManager } from '../workspace';
+import { DfmTaskDiscovery } from './dfmTaskDiscovery';
+import { YamlContextAnalyzer } from './yamlContextAnalyzer';
 
 export class FlowHoverProvider implements vscode.HoverProvider {
+    private taskDiscovery: DfmTaskDiscovery;
+    private yamlAnalyzer: YamlContextAnalyzer;
+
     constructor(
         private documentCache: FlowDocumentCache,
         private workspaceManager: WorkspaceManager
-    ) {}
+    ) {
+        this.taskDiscovery = new DfmTaskDiscovery();
+        this.yamlAnalyzer = new YamlContextAnalyzer();
+    }
+
+    dispose(): void {
+        this.taskDiscovery.dispose();
+    }
 
     async provideHover(
         document: vscode.TextDocument,
@@ -32,18 +45,29 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         const word = document.getText(wordRange);
         const line = document.lineAt(position.line).text;
         
-        // Determine context based on line content
-        const context = this.determineContext(line, position.character, word);
+        // Try YAML-based context detection first (more precise)
+        const yamlContext = this.yamlAnalyzer.analyzeContext(document, position);
         
-        console.log(`[HoverProvider] word="${word}", context="${context}", line="${line.trim()}"`);
+        let context: string;
+        if (yamlContext) {
+            // Use YAML-based context
+            context = this.mapYamlContextToLegacy(yamlContext.kind);
+            console.log(`[HoverProvider] word="${word}", YAML context="${yamlContext.kind}" (${this.yamlAnalyzer.describeContext(yamlContext)}), line="${line.trim()}"`);
+        } else {
+            // Fallback to text-based detection for malformed documents
+            context = this.determineContext(line, position.character, word);
+            console.log(`[HoverProvider] word="${word}", text-based context="${context}", line="${line.trim()}"`);
+        }
         
         switch (context) {
             case 'task-name':
                 return this.getTaskHover(word, flowDoc.tasks.get(word));
             case 'task-uses':
-                return this.getTaskTypeHover(word);
+                return this.getTaskTypeHover(word, flowDoc);
             case 'task-needs':
                 return this.getTaskReferenceHover(word, flowDoc);
+            case 'fragment':
+                return this.getFragmentHover(word, flowDoc);
             case 'import':
                 return this.getImportHover(word, flowDoc.imports.get(word));
             case 'parameter':
@@ -53,6 +77,34 @@ export class FlowHoverProvider implements vscode.HoverProvider {
             default:
                 // Try to find what this word refers to
                 return this.getGenericHover(word, flowDoc);
+        }
+    }
+
+    /**
+     * Map YAML context kinds to legacy context strings for backward compatibility
+     */
+    private mapYamlContextToLegacy(yamlKind: string): string {
+        switch (yamlKind) {
+            case 'task-name':
+                return 'task-name';
+            case 'task-uses':
+                return 'task-uses';
+            case 'task-needs':
+                return 'task-needs';
+            case 'task-parameter':
+            case 'task-parameter-value':
+            case 'package-parameter':
+            case 'package-parameter-value':
+                return 'parameter';
+            case 'import':
+            case 'import-path':
+                return 'import';
+            case 'fragment':
+                return 'fragment';
+            case 'expression':
+                return 'expression';
+            default:
+                return 'unknown';
         }
     }
 
@@ -74,16 +126,10 @@ export class FlowHoverProvider implements vscode.HoverProvider {
             return 'task-needs';
         }
         
-        // Check for needs list item: "  - task_name"
-        // This matches list items that look like task references (simple identifiers)
-        if (trimmed.match(/^-\s*["']?[a-zA-Z_][a-zA-Z0-9_]*["']?\s*$/)) {
-            return 'task-needs';
-        }
-        
-        // Check for imports section - list items without colon that aren't task-like
-        if (trimmed.match(/^-\s*[a-zA-Z_]/) && !trimmed.includes(':')) {
-            // Could be either import or needs - default to task-needs as it's more common
-            return 'task-needs';
+        // Check for list items - need to determine section context
+        if (trimmed.match(/^-\s*/)) {
+            // This is a list item - determine which section we're in
+            return this.determineSectionContext(trimmed);
         }
         
         // Check for expression
@@ -101,6 +147,26 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         }
         
         return 'unknown';
+    }
+
+    /**
+     * Determine what section a list item belongs to by looking at context
+     */
+    private determineSectionContext(trimmedLine: string): string {
+        // Check what the line looks like
+        const isFilePath = trimmedLine.match(/^-\s*[^\s:]+\.(dv|yaml|yml)/);
+        if (isFilePath) {
+            return 'fragment';
+        }
+        
+        // Check if it has a colon (could be import with path)
+        if (trimmedLine.includes(':')) {
+            return 'import';
+        }
+        
+        // Simple identifier without extension - could be task reference, import, or fragment
+        // Default to task-needs as it's most common
+        return 'task-needs';
     }
 
     private getTaskHover(name: string, task?: FlowTaskDef): vscode.Hover | null {
@@ -139,12 +205,22 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         return new vscode.Hover(markdown);
     }
 
-    private getTaskTypeHover(typeName: string): vscode.Hover | null {
+    private async getTaskTypeHover(typeName: string, flowDoc?: FlowDocument): Promise<vscode.Hover | null> {
         // First, check if this is a user-defined task
         const found = this.documentCache.findTask(typeName);
         if (found) {
             // It's a user-defined task, show full task hover
             return this.getTaskHover(typeName, found.task);
+        }
+        
+        // Check dfm-discovered tasks
+        if (flowDoc) {
+            const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
+            const dfmTask = dfmTasks.get(typeName);
+            
+            if (dfmTask) {
+                return this.getDfmTaskHover(dfmTask);
+            }
         }
         
         const markdown = new vscode.MarkdownString();
@@ -218,7 +294,7 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         return taskTypes[typeName] || null;
     }
 
-    private getTaskReferenceHover(taskName: string, flowDoc?: FlowDocument): vscode.Hover | null {
+    private async getTaskReferenceHover(taskName: string, flowDoc?: FlowDocument): Promise<vscode.Hover | null> {
         console.log(`[HoverProvider] Looking up task reference: "${taskName}"`);
         
         // First check current document
@@ -239,10 +315,108 @@ export class FlowHoverProvider implements vscode.HoverProvider {
             return this.getTaskHover(taskName, found.task);
         }
         
-        console.log(`[HoverProvider] Task "${taskName}" not found in document or cache`);
+        // Finally, check dfm-discovered tasks
+        console.log(`[HoverProvider] Checking dfm-discovered tasks for "${taskName}"`);
+        if (flowDoc) {
+            const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
+            const dfmTask = dfmTasks.get(taskName);
+            
+            if (dfmTask) {
+                console.log(`[HoverProvider] Found task "${taskName}" in dfm tasks`);
+                return this.getDfmTaskHover(dfmTask);
+            }
+        }
+        
+        console.log(`[HoverProvider] Task "${taskName}" not found in document, cache, or dfm`);
         const markdown = new vscode.MarkdownString();
         markdown.appendMarkdown(`### Task Reference: \`${taskName}\`\n\n`);
         markdown.appendMarkdown(`*Referenced task dependency (definition not found)*`);
+        
+        return new vscode.Hover(markdown);
+    }
+
+    /**
+     * Get dfm-discovered tasks for hover
+     */
+    private async getDfmDiscoveredTasks(flowDoc: FlowDocument): Promise<Map<string, any>> {
+        const tasks = new Map<string, any>();
+        
+        try {
+            // Get list of imported packages for context
+            const imports = Array.from(flowDoc.imports.keys());
+            
+            // Get workspace root for context
+            const rootDir = path.dirname(flowDoc.uri.fsPath);
+            
+            // Discover tasks from all available packages
+            const discoveredTasks = await this.taskDiscovery.discoverAllTasks(
+                imports,
+                rootDir
+            );
+            
+            // Flatten into single map with full name as key
+            for (const [pkg, pkgTasks] of discoveredTasks) {
+                for (const task of pkgTasks) {
+                    tasks.set(task.name, task);
+                }
+            }
+        } catch (error) {
+            console.error('[HoverProvider] Failed to discover dfm tasks:', error);
+        }
+        
+        return tasks;
+    }
+
+    /**
+     * Create hover for dfm-discovered task
+     */
+    private getDfmTaskHover(dfmTask: any): vscode.Hover {
+        const markdown = new vscode.MarkdownString();
+        markdown.isTrusted = true;
+        
+        markdown.appendMarkdown(`### Task: \`${dfmTask.name}\`\n\n`);
+        
+        if (dfmTask.desc) {
+            markdown.appendMarkdown(`${dfmTask.desc}\n\n`);
+        }
+        
+        if (dfmTask.doc) {
+            markdown.appendMarkdown(`${dfmTask.doc}\n\n`);
+        }
+        
+        if (dfmTask.uses) {
+            markdown.appendMarkdown(`**Base Type:** \`${dfmTask.uses}\`\n\n`);
+        }
+        
+        markdown.appendMarkdown(`**Package:** \`${dfmTask.package}\`\n\n`);
+        
+        if (dfmTask.scope && dfmTask.scope.length > 0) {
+            markdown.appendMarkdown(`**Scope:** \`${dfmTask.scope.join(', ')}\`\n\n`);
+        }
+        
+        markdown.appendMarkdown(`---\n`);
+        markdown.appendMarkdown(`*Task from ${dfmTask.package} package*`);
+        
+        return new vscode.Hover(markdown);
+    }
+
+    private getFragmentHover(fragmentPath: string, flowDoc: FlowDocument): vscode.Hover {
+        const markdown = new vscode.MarkdownString();
+        markdown.isTrusted = true;
+        
+        markdown.appendMarkdown(`### Fragment: \`${fragmentPath}\`\n\n`);
+        markdown.appendMarkdown(`Flow file fragment that will be included in this package.\n\n`);
+        
+        // Check if the fragment exists in the flowDoc
+        const fragment = flowDoc.fragments.find(f => f.path === fragmentPath || f.path.endsWith(fragmentPath));
+        if (fragment) {
+            markdown.appendMarkdown(`**Status:** File found\n\n`);
+        } else {
+            markdown.appendMarkdown(`**Status:** Fragment reference\n\n`);
+        }
+        
+        markdown.appendMarkdown(`---\n`);
+        markdown.appendMarkdown(`*Click to navigate to fragment file*`);
         
         return new vscode.Hover(markdown);
     }
@@ -318,7 +492,7 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         return new vscode.Hover(markdown);
     }
 
-    private getGenericHover(word: string, flowDoc: any): vscode.Hover | null {
+    private async getGenericHover(word: string, flowDoc: any): Promise<vscode.Hover | null> {
         // Try to find what this word refers to
         
         // Check tasks
@@ -343,6 +517,14 @@ export class FlowHoverProvider implements vscode.HoverProvider {
         const foundTask = this.documentCache.findTask(word);
         if (foundTask) {
             return this.getTaskHover(word, foundTask.task);
+        }
+        
+        // Check dfm-discovered tasks
+        const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
+        const dfmTask = dfmTasks.get(word);
+        
+        if (dfmTask) {
+            return this.getDfmTaskHover(dfmTask);
         }
         
         return null;

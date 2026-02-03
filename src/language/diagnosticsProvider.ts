@@ -127,6 +127,9 @@ export class FlowDiagnosticsProvider {
      */
     async validateDocument(document: vscode.TextDocument): Promise<void> {
         const diagnostics: vscode.Diagnostic[] = [];
+        
+        // Parse the document for context
+        const flowDoc = await this.documentCache.parseFromText(document.uri, document.getText());
 
         // First, do local validation (fast)
         const localDiagnostics = await this.validateLocally(document);
@@ -134,7 +137,7 @@ export class FlowDiagnosticsProvider {
 
         // Then, run dfm validate for deeper validation (if document is saved)
         if (!document.isDirty) {
-            const dfmDiagnostics = await this.validateWithDfm(document);
+            const dfmDiagnostics = await this.validateWithDfm(document, flowDoc);
             diagnostics.push(...dfmDiagnostics);
         }
 
@@ -179,34 +182,31 @@ export class FlowDiagnosticsProvider {
                     const existsInDfm = dfmTasks.has(need);
                     
                     if (!existsLocally && !existsInDfm) {
-                        // Check if it might be a qualified name from an import or fragment
+                        // Check if it might be a qualified name from a fragment
                         const parts = need.split('.');
                         let shouldReport = false;
                         let warningMessage = '';
                         
                         if (parts.length > 1) {
-                            const pkgOrFragmentName = parts[0];
+                            const firstPart = parts[0];
                             
-                            // Check if it's an import package
-                            if (!flowDoc.imports.has(pkgOrFragmentName)) {
-                                // Check if it might be a fragment-qualified reference
-                                // Look through all cached documents for a matching fragment
-                                let isFragmentReference = false;
-                                for (const cachedDoc of this.documentCache.getAllDocuments()) {
-                                    if (cachedDoc.fragmentName === pkgOrFragmentName && 
-                                        cachedDoc.packageName === flowDoc.packageName) {
-                                        isFragmentReference = true;
-                                        break;
-                                    }
-                                }
-                                
-                                if (!isFragmentReference) {
-                                    shouldReport = true;
-                                    warningMessage = `Unknown task: '${need}'. Package '${pkgOrFragmentName}' is not imported.`;
+                            // Check if it might be a fragment-qualified reference
+                            let isFragmentReference = false;
+                            for (const cachedDoc of this.documentCache.getAllDocuments()) {
+                                if (cachedDoc.fragmentName === firstPart && 
+                                    cachedDoc.packageName === flowDoc.packageName) {
+                                    isFragmentReference = true;
+                                    break;
                                 }
                             }
-                            // If package IS imported or it's a fragment, don't report - dfm will validate
+                            
+                            if (!isFragmentReference) {
+                                // Not a fragment reference and not found in dfm tasks
+                                shouldReport = true;
+                                warningMessage = `Unknown task: '${need}'. Task not found in local definitions or available packages.`;
+                            }
                         } else {
+                            // Simple (unqualified) name not found
                             shouldReport = true;
                             warningMessage = `Unknown task: '${need}'. Did you forget to define it or import a package?`;
                         }
@@ -351,8 +351,11 @@ export class FlowDiagnosticsProvider {
     /**
      * Validate using dfm validate command
      */
-    private async validateWithDfm(document: vscode.TextDocument): Promise<vscode.Diagnostic[]> {
+    private async validateWithDfm(document: vscode.TextDocument, flowDoc: FlowDocument): Promise<vscode.Diagnostic[]> {
         const diagnostics: vscode.Diagnostic[] = [];
+        
+        // Get dfm-discovered tasks to filter false positives
+        const dfmTasks = await this.getDfmDiscoveredTasks(flowDoc);
         
         try {
             const workspaceRoot = path.dirname(document.uri.fsPath);
@@ -374,6 +377,14 @@ export class FlowDiagnosticsProvider {
                     
                     if (result.errors) {
                         for (const error of result.errors) {
+                            // Filter out UndefinedTaskReference errors if task exists in dfm
+                            if (error.type === 'UndefinedTaskReference' && error.reference) {
+                                if (dfmTasks.has(error.reference)) {
+                                    console.log(`[DV Flow Diagnostics] Suppressing false positive: ${error.reference} exists in dfm`);
+                                    continue; // Skip this error - it's a false positive
+                                }
+                            }
+                            
                             const diagnostic = await this.createDiagnosticFromDfm(error, document);
                             if (diagnostic) {
                                 diagnostics.push(diagnostic);
