@@ -590,6 +590,11 @@ export class FlowEditorProvider implements vscode.CustomTextEditorProvider {
                             
                             // Build graph
                             for (const edge of edges) {
+                                // Skip edges that reference non-existent nodes (e.g., compound tasks)
+                                if (!adjList.has(edge.from) || !adjList.has(edge.to)) {
+                                    console.log(\`[FlowGraph] Skipping edge from \${edge.from} to \${edge.to} - node not in graph\`);
+                                    continue;
+                                }
                                 adjList.get(edge.from).push(edge.to);
                                 inDegree.set(edge.to, inDegree.get(edge.to) + 1);
                             }

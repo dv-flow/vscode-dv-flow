@@ -243,7 +243,8 @@ export async function discoverDfm(): Promise<string> {
                 const dfmEnvrc = child_process.execSync(`direnv exec "${workspaceRoot}" which dfm 2>/dev/null`, { encoding: 'utf8' }).trim();
                 if (dfmEnvrc) {
                     logDiscovery(`SUCCESS: Found dfm via direnv: ${dfmEnvrc}`);
-                    cachedDfmPath = `"${dfmEnvrc}"`;
+                    // Use 'direnv exec . env' to extract environment and run dfm with proper env
+                    cachedDfmPath = `direnv exec . dfm`;
                     cachedWorkspaceRoot = workspaceRoot;
                     return cachedDfmPath;
                 }
